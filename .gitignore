@@ -1,0 +1,42 @@
+# Go backend
+/onvif_back/vendor/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Frontend
+/onvif_front/node_modules/
+/onvif_front/.npm
+/onvif_front/.env
+/onvif_front/dist/
+/onvif_front/build/
+/onvif_front/npm-debug.log*
+/onvif_front/yarn-debug.log*
+/onvif_front/yarn-error.log*
+
+# Logs
+/logs/
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor folders
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Backup files
+/backup/

@@ -1,0 +1,121 @@
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #121212;
+  color: rgba(255, 255, 255, 0.85); /* Reduced contrast */
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.MuiCard-root {
+  background-color: #1e1e1e;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+  filter: brightness(0.8);
+}
+
+.logo:hover {
+  filter: drop-shadow(0 0 2em rgba(144, 202, 249, 0.7));
+}
+
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em rgba(97, 218, 251, 0.7));
+}
+
+.app-header {
+  background-color: #1e1e1e;
+  color: rgba(144, 202, 249, 0.9); /* Reduced contrast */
+  padding: 1rem;
+  text-align: center;
+  margin-bottom: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Dark mode animation */
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+  background-color: #1e1e1e;
+  color: rgba(255, 255, 255, 0.85); /* Reduced contrast */
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5);
+}
+
+.success-alert {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: rgba(129, 199, 132, 0.9); /* Reduced contrast */
+  border: 1px solid rgba(76, 175, 80, 0.6);
+}
+
+.error-alert {
+  background-color: rgba(244, 67, 54, 0.15);
+  color: rgba(229, 115, 115, 0.9); /* Reduced contrast */
+  border: 1px solid rgba(244, 67, 54, 0.6);
+}
+
+.read-the-docs {
+  color: rgba(176, 190, 197, 0.8); /* Reduced contrast */
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e; 
+}
+ 
+::-webkit-scrollbar-thumb {
+  background: #444444; 
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #555555; 
+}
+
+/* Dark theme overrides for specific components with reduced contrast */
+.MuiInputBase-root {
+  background-color: #2d2d2d;
+}
+
+.MuiAlert-standardInfo {
+  background-color: rgba(30, 58, 95, 0.8);
+  color: rgba(144, 202, 249, 0.9);
+}
+
+.MuiAlert-standardSuccess {
+  background-color: rgba(30, 62, 44, 0.8);
+  color: rgba(129, 199, 132, 0.9);
+}
+
+.MuiAlert-standardError {
+  background-color: rgba(62, 30, 30, 0.8);
+  color: rgba(229, 115, 115, 0.9);
+}

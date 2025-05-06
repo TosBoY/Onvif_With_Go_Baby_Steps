@@ -115,14 +115,14 @@ func main() {
 
 	// Add CORS support
 	corsHandler := handlers.CORS(
-		handlers.AllowedOrigins([]string{"*"}),
+		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:5173"}),
 		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
 		handlers.AllowedHeaders([]string{"Content-Type"}),
 	)(r)
 
 	// Start the server
-	log.Println("Starting server on 0.0.0.0:8090...")
-	log.Fatal(http.ListenAndServe("0.0.0.0:8090", corsHandler))
+	log.Println("Starting server on :8090...")
+	log.Fatal(http.ListenAndServe(":8090", corsHandler))
 }
 
 // Handler to get camera info

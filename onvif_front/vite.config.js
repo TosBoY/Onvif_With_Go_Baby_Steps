@@ -1,23 +1,15 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Get backend URL from environment variable or default to the Pi's IP
-const backendHost = process.env.BACKEND_HOST || '192.168.1.16'
-const backendPort = process.env.BACKEND_PORT || '8090'
-const backendUrl = `http://${backendHost}:${backendPort}`
-
-console.log(`Using backend URL: ${backendUrl}`)
-
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     strictPort: true,
-    host: '0.0.0.0', // Listen on all interfaces
     proxy: {
       '/api': {
-        target: backendUrl,
+        target: 'http://localhost:8090',
         changeOrigin: true,
         secure: false,
         rewrite: (path) => path,

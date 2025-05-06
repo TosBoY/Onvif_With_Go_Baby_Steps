@@ -1,52 +1,30 @@
+# Ignore specific folders
+backup/
+onvif_test/
+
 # Go backend
 /onvif_back/vendor/
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-*.test
-*.out
-go.work
+**/bin/
+**/debug/
+
+# Go test files
+**/*.test
+**/*.prof
 
 # Frontend
-/onvif_front/node_modules/
+**/node_modules/
+**/.pnp
+**/.pnp.js
+**/dist/
+**/out/
+**/.cache/
+**/.output/
 /onvif_front/.npm
 /onvif_front/.env
-/onvif_front/dist/
 /onvif_front/build/
 /onvif_front/npm-debug.log*
 /onvif_front/yarn-debug.log*
 /onvif_front/yarn-error.log*
-
-# Logs
-/logs/
-*.log
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# IDE and editor folders
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Backup files
-/backup/
-
-# Ignore folders
-backup/
-onvif_test/
-
-# Log files
-*.log
 
 # Binary files
 *.exe
@@ -55,33 +33,18 @@ onvif_test/
 *.so
 *.dylib
 *.bin
+go.work
 
-# Go binary
-**/bin/
-**/*/bin/
-**/debug
+# Log files
+/logs/
+*.log
 
-# Go test files
-**/*.test
-**/*.prof
-
-# Output folders
-**/dist/
-**/out/
-
-# Node modules for frontend
-**/node_modules/
-**/.pnp
-**/.pnp.js
-
-# Build artifacts
-**/.cache/
-**/.output/
-
-# Editor directories and files
+# IDE and editor folders
+.idea/
 .vscode/*
 !.vscode/extensions.json
-.idea/
+*.swp
+*.swo
 *.suo
 *.ntvs*
 *.njsproj

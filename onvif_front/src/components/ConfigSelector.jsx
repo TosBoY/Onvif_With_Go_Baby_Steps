@@ -29,8 +29,8 @@ const ConfigSelector = ({ configs, onChange, selectedConfig }) => {
           onChange={handleChange}
         >
           {configs && configs.map((c) => (
-            <MenuItem key={c.Token} value={c.Token}>
-              {c.Name} ({c.Width}x{c.Height}, {c.Encoding})
+            <MenuItem key={c.token || c.Token} value={c.token || c.Token}>
+              {c.name || c.Name || 'Unnamed Config'} ({c.width || c.Width || '?'}x{c.height || c.Height || '?'}, {c.encoding || c.Encoding || '?'})
             </MenuItem>
           ))}
         </Select>

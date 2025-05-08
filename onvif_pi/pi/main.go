@@ -247,6 +247,8 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 	configToken := r.URL.Query().Get("configToken")
 	profileToken := r.URL.Query().Get("profileToken")
 
+	log.Printf("Getting resolutions for configToken=%s, profileToken=%s", configToken, profileToken)
+
 	options, err := GetVideoEncoderOptions(camera, configToken, profileToken)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to get video encoder options: %v", err), http.StatusInternalServerError)
@@ -254,6 +256,31 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h264Options := ParseH264Options(options)
+
+	// Debug log the parsed options
+	resolutionCount := len(h264Options.ResolutionOptions)
+	log.Printf("Parsed %d resolutions from camera", resolutionCount)
+
+	if resolutionCount > 0 {
+		log.Printf("First resolution: %dx%d",
+			h264Options.ResolutionOptions[0].Width,
+			h264Options.ResolutionOptions[0].Height)
+	} else {
+		log.Printf("WARNING: No resolutions were parsed from camera response!")
+
+		// If no resolutions were found, add default resolutions
+		log.Printf("Adding default resolutions as fallback")
+		h264Options.ResolutionOptions = []VideoResolution{
+			{Width: 1920, Height: 1080},
+			{Width: 1280, Height: 720},
+			{Width: 640, Height: 480},
+			{Width: 320, Height: 240},
+		}
+	}
+
+	// Log the response that will be sent
+	jsonBytes, _ := json.MarshalIndent(h264Options, "", "  ")
+	log.Printf("Sending JSON response: %s", string(jsonBytes))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h264Options)

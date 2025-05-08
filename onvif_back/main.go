@@ -186,8 +186,9 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h264Options := lib.ParseH264Options(options)
-	fmt.Println("getResolutions: Successfully retrieved resolution options")
-
+	fmt.Println("getResolutions: Successfully retrieved and parsed options")
+	
+	// Set content type header and write the response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h264Options)
 }

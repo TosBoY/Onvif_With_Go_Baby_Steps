@@ -17,12 +17,21 @@ import {
 } from '@mui/material';
 import api from '../services/api';
 
+// Default resolutions to use as fallback when API returns empty array
+const DEFAULT_RESOLUTIONS = [
+  { Width: 1920, Height: 1080 },
+  { Width: 1280, Height: 720 },
+  { Width: 640, Height: 480 },
+  { Width: 320, Height: 240 }
+];
+
 const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => {
   const [options, setOptions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [autoLaunchVLC, setAutoLaunchVLC] = useState(false);
+  const [usingFallbackResolutions, setUsingFallbackResolutions] = useState(false);
   const [formData, setFormData] = useState({
     resolution: '',
     frameRate: '',
@@ -38,26 +47,48 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       setLoading(true);
       try {
         const data = await api.getResolutions(configToken, profileToken);
+        console.log("Resolution data received:", data);
+        
+        // Check if we need to use fallback resolutions
+        if (!data.ResolutionsAvailable || data.ResolutionsAvailable.length === 0) {
+          console.log("No resolutions available from API, using fallbacks");
+          data.ResolutionsAvailable = DEFAULT_RESOLUTIONS;
+          setUsingFallbackResolutions(true);
+        } else {
+          setUsingFallbackResolutions(false);
+        }
+        
         setOptions(data);
         
-        // Set default values when options are loaded
-        if (data.ResolutionsAvailable && data.ResolutionsAvailable.length > 0) {
+        // Set default values when options are loaded with proper null checks
+        if (data && data.ResolutionsAvailable && data.ResolutionsAvailable.length > 0) {
           const defaultIndex = 0;
           const defaultRes = data.ResolutionsAvailable[defaultIndex];
           
           setFormData({
             resolution: defaultIndex,
-            frameRate: data.FrameRateRange.Min,
+            frameRate: data.FrameRateRange && data.FrameRateRange.Min ? data.FrameRateRange.Min : 1,
             bitRate: 4096, // Default bitrate
-            govLength: data.GovLengthRange.Min,
-            h264Profile: data.H264ProfilesSupported ? data.H264ProfilesSupported[0] : 'Main',
+            govLength: data.GovLengthRange && data.GovLengthRange.Min ? data.GovLengthRange.Min : 1,
+            h264Profile: data.H264ProfilesSupported && data.H264ProfilesSupported.length > 0 ? data.H264ProfilesSupported[0] : 'Main',
             width: defaultRes.Width,
             height: defaultRes.Height
+          });
+        } else {
+          // No resolution data available, set default values
+          setError('No resolution options available for this profile/config combination');
+          setFormData({
+            resolution: '',
+            frameRate: 1,
+            bitRate: 4096,
+            govLength: 1,
+            h264Profile: 'Main'
           });
         }
         
         setLoading(false);
       } catch (err) {
+        console.error('Failed to load resolution options:', err);
         setError('Failed to load resolution options');
         setLoading(false);
       }
@@ -68,7 +99,7 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
 
   const handleResolutionChange = (event) => {
     const selectedResIndex = event.target.value;
-    if (options.ResolutionsAvailable && selectedResIndex !== undefined && 
+    if (options && options.ResolutionsAvailable && selectedResIndex !== undefined && 
         selectedResIndex !== null && options.ResolutionsAvailable[selectedResIndex]) {
       const selectedRes = options.ResolutionsAvailable[selectedResIndex];
       
@@ -95,7 +126,7 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       return;
     }
 
-    if (!options.ResolutionsAvailable || !options.ResolutionsAvailable[formData.resolution]) {
+    if (!options || !options.ResolutionsAvailable || !options.ResolutionsAvailable[formData.resolution]) {
       setError('Invalid resolution selection');
       return;
     }
@@ -107,10 +138,10 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       profileToken,
       width: selectedRes.Width,
       height: selectedRes.Height,
-      frameRate: parseInt(formData.frameRate, 10) || options.FrameRateRange.Min,
+      frameRate: parseInt(formData.frameRate, 10) || (options.FrameRateRange && options.FrameRateRange.Min ? options.FrameRateRange.Min : 1),
       bitRate: parseInt(formData.bitRate, 10) || 4096,
-      gopLength: parseInt(formData.govLength, 10) || options.GovLengthRange.Min,
-      h264Profile: formData.h264Profile || (options.H264ProfilesSupported ? options.H264ProfilesSupported[0] : 'Main')
+      gopLength: parseInt(formData.govLength, 10) || (options.GovLengthRange && options.GovLengthRange.Min ? options.GovLengthRange.Min : 1),
+      h264Profile: formData.h264Profile || (options.H264ProfilesSupported && options.H264ProfilesSupported.length > 0 ? options.H264ProfilesSupported[0] : 'Main')
     };
 
     try {
@@ -152,12 +183,25 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
     return <Typography>Select a valid profile and configuration token first</Typography>;
   }
 
+  // Safely get range values with fallbacks
+  const frameRateMin = options.FrameRateRange && options.FrameRateRange.Min ? options.FrameRateRange.Min : 1;
+  const frameRateMax = options.FrameRateRange && options.FrameRateRange.Max ? options.FrameRateRange.Max : 30;
+  const govLengthMin = options.GovLengthRange && options.GovLengthRange.Min ? options.GovLengthRange.Min : 1;
+  const govLengthMax = options.GovLengthRange && options.GovLengthRange.Max ? options.GovLengthRange.Max : 60;
+
   return (
     <Card variant="outlined" sx={{ mb: 3 }}>
       <CardContent>
         <Typography variant="h6" gutterBottom>
           Change Resolution Settings
         </Typography>
+        
+        {usingFallbackResolutions && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            No resolution options were returned by the camera. Using common resolutions instead.
+            These may not all be supported by your device.
+          </Alert>
+        )}
 
         {/* Resolution selector */}
         <FormControl fullWidth sx={{ mb: 2 }}>
@@ -186,12 +230,12 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
 
         {/* Frame rate input */}
         <TextField
-          label={`Frame Rate (${options.FrameRateRange.Min}-${options.FrameRateRange.Max} fps)`}
+          label={`Frame Rate (${frameRateMin}-${frameRateMax} fps)`}
           type="number"
           name="frameRate"
           value={formData.frameRate}
           onChange={handleInputChange}
-          InputProps={{ inputProps: { min: options.FrameRateRange.Min, max: options.FrameRateRange.Max } }}
+          InputProps={{ inputProps: { min: frameRateMin, max: frameRateMax } }}
           fullWidth
           sx={{ mb: 2 }}
         />
@@ -210,12 +254,12 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
 
         {/* GOP length input */}
         <TextField
-          label={`GOP Length (${options.GovLengthRange.Min}-${options.GovLengthRange.Max})`}
+          label={`GOP Length (${govLengthMin}-${govLengthMax})`}
           type="number"
           name="govLength"
           value={formData.govLength}
           onChange={handleInputChange}
-          InputProps={{ inputProps: { min: options.GovLengthRange.Min, max: options.GovLengthRange.Max } }}
+          InputProps={{ inputProps: { min: govLengthMin, max: govLengthMax } }}
           fullWidth
           sx={{ mb: 2 }}
         />

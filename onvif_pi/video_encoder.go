@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/xml"
 	"fmt"
+	"io/ioutil"
 	"strings"
 
 	"github.com/use-go/onvif/media"
@@ -68,6 +70,13 @@ func GetAllProfiles(camera *Camera) ([]Profile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get profiles: %v", err)
 	}
+	defer response.Body.Close()
+
+	// Read the response body
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
 
 	// Parse the response
 	var envelope struct {
@@ -113,9 +122,8 @@ func GetAllProfiles(camera *Camera) ([]Profile, error) {
 		} `xml:"Body"`
 	}
 
-	err = response.Unmarshal(&envelope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse profiles: %v", err)
+	if err := xml.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to parse profiles XML: %v", err)
 	}
 
 	// Convert to our Profile struct
@@ -174,6 +182,13 @@ func GetAllVideoEncoderConfigurations(camera *Camera) ([]VideoEncoderConfigurati
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video encoder configurations: %v", err)
 	}
+	defer response.Body.Close()
+
+	// Read the response body
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
 
 	var envelope struct {
 		Body struct {
@@ -209,9 +224,8 @@ func GetAllVideoEncoderConfigurations(camera *Camera) ([]VideoEncoderConfigurati
 		} `xml:"Body"`
 	}
 
-	err = response.Unmarshal(&envelope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse video encoder configurations: %v", err)
+	if err := xml.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to parse video encoder configurations XML: %v", err)
 	}
 
 	configs := make([]VideoEncoderConfiguration, 0)
@@ -255,6 +269,13 @@ func GetVideoEncoderConfiguration(camera *Camera, token string) (*VideoEncoderCo
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video encoder configuration: %v", err)
 	}
+	defer response.Body.Close()
+
+	// Read the response body
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
 
 	var envelope struct {
 		Body struct {
@@ -290,9 +311,8 @@ func GetVideoEncoderConfiguration(camera *Camera, token string) (*VideoEncoderCo
 		} `xml:"Body"`
 	}
 
-	err = response.Unmarshal(&envelope)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse video encoder configuration: %v", err)
+	if err := xml.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to parse video encoder configuration XML: %v", err)
 	}
 
 	c := envelope.Body.GetVideoEncoderConfigurationResponse.Configuration
@@ -324,9 +344,13 @@ func GetVideoEncoderConfiguration(camera *Camera, token string) (*VideoEncoderCo
 
 // GetVideoEncoderOptions retrieves the video encoder options for a specific configuration
 func GetVideoEncoderOptions(camera *Camera, configToken string, profileToken string) (interface{}, error) {
+	// Convert string tokens to the correct type for the older library version
+	configTokenRef := configToken
+	profileTokenRef := profileToken
+
 	request := media.GetVideoEncoderConfigurationOptions{
-		ConfigurationToken: &configToken,
-		ProfileToken:       &profileToken,
+		ConfigurationToken: &configTokenRef,
+		ProfileToken:       &profileTokenRef,
 	}
 
 	response, err := camera.Device.CallMethod(request)
@@ -334,12 +358,19 @@ func GetVideoEncoderOptions(camera *Camera, configToken string, profileToken str
 		return nil, fmt.Errorf("failed to get video encoder options: %v", err)
 	}
 
-	return response.Body, nil
+	// Read the body content for parsing
+	defer response.Body.Close()
+	bodyBytes, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	return string(bodyBytes), nil
 }
 
 // ParseH264Options parses the raw response body to extract H.264 encoding options
 func ParseH264Options(responseBody interface{}) *H264Options {
-	// This is a simplified parser - you may need to adjust based on actual response format
+	// Convert response body to string for parsing
 	bodyStr := fmt.Sprintf("%v", responseBody)
 
 	options := &H264Options{
@@ -428,93 +459,170 @@ func SetVideoEncoderConfiguration(
 		return fmt.Errorf("failed to get current configuration: %v", err)
 	}
 
-	// Prepare the configuration update request
-	request := media.SetVideoEncoderConfiguration{
-		Configuration: media.VideoEncoderConfiguration{
-			Token:    xsd.Token(token),
-			Name:     xsd.String(name),
-			Encoding: xsd.String("H264"),
-			Resolution: media.VideoResolution{
-				Width:  xsd.Int(width),
-				Height: xsd.Int(height),
-			},
-			Quality: xsd.Float(config.Quality), // Keep the original quality
-			RateControl: media.VideoRateControl{
-				FrameRateLimit:   xsd.Int(frameRate),
-				EncodingInterval: xsd.Int(govLength),
-				BitrateLimit:     xsd.Int(bitRate),
-			},
-			H264: media.H264Configuration{
-				GovLength:   xsd.Int(govLength),
-				H264Profile: xsd.String(h264Profile),
-			},
-			Multicast: media.MulticastConfiguration{
-				Address: media.IPAddress{
-					Type:        xsd.String("IPv4"),
-					IPv4Address: xsd.IPv4Address(config.Multicast.Address),
-				},
-				Port:      xsd.Int(config.Multicast.Port),
-				TTL:       xsd.Int(config.Multicast.TTL),
-				AutoStart: xsd.Boolean(config.Multicast.AutoStart),
-			},
-			SessionTimeout: xsd.Duration("PT10S"),
+	// Create a simplified struct for the set operation that works with the older version
+	type Resolution struct {
+		Width  int `xml:"Width"`
+		Height int `xml:"Height"`
+	}
+
+	type RateControl struct {
+		FrameRateLimit   int `xml:"FrameRateLimit"`
+		EncodingInterval int `xml:"EncodingInterval"`
+		BitrateLimit     int `xml:"BitrateLimit"`
+	}
+
+	type H264 struct {
+		GovLength   int    `xml:"GovLength"`
+		H264Profile string `xml:"H264Profile"`
+	}
+
+	type Address struct {
+		Type        string `xml:"Type"`
+		IPv4Address string `xml:"IPv4Address"`
+	}
+
+	type Multicast struct {
+		Address   Address `xml:"Address"`
+		Port      int     `xml:"Port"`
+		TTL       int     `xml:"TTL"`
+		AutoStart bool    `xml:"AutoStart"`
+	}
+
+	type EncoderConfiguration struct {
+		Token       string      `xml:"token,attr"`
+		Name        string      `xml:"Name"`
+		Encoding    string      `xml:"Encoding"`
+		Resolution  Resolution  `xml:"Resolution"`
+		Quality     float64     `xml:"Quality"`
+		RateControl RateControl `xml:"RateControl"`
+		H264        H264        `xml:"H264"`
+		Multicast   Multicast   `xml:"Multicast"`
+	}
+
+	type SetVideoEncoderConfiguration struct {
+		XMLName          xml.Name             `xml:"SetVideoEncoderConfiguration"`
+		Configuration    EncoderConfiguration `xml:"Configuration"`
+		ForcePersistence bool                 `xml:"ForcePersistence"`
+	}
+
+	// Build the custom request
+	encoderConfig := EncoderConfiguration{
+		Token:    token,
+		Name:     name,
+		Encoding: "H264",
+		Resolution: Resolution{
+			Width:  width,
+			Height: height,
 		},
-		ForcePersistence: xsd.Boolean(true),
+		Quality: config.Quality,
+		RateControl: RateControl{
+			FrameRateLimit:   frameRate,
+			EncodingInterval: govLength,
+			BitrateLimit:     bitRate,
+		},
+		H264: H264{
+			GovLength:   govLength,
+			H264Profile: h264Profile,
+		},
 	}
 
-	// Send the request
-	response, err := camera.Device.CallMethod(request)
-	if err != nil {
-		return fmt.Errorf("failed to set video encoder configuration: %v", err)
-	}
-
-	// Check for success
-	var envelope struct {
-		Body struct {
-			SetVideoEncoderConfigurationResponse struct{}
+	if config.Multicast != nil {
+		encoderConfig.Multicast = Multicast{
+			Address: Address{
+				Type:        "IPv4",
+				IPv4Address: config.Multicast.Address,
+			},
+			Port:      config.Multicast.Port,
+			TTL:       config.Multicast.TTL,
+			AutoStart: config.Multicast.AutoStart,
 		}
 	}
 
-	if err := response.Unmarshal(&envelope); err != nil {
-		return fmt.Errorf("failed to parse response: %v", err)
+	request := SetVideoEncoderConfiguration{
+		Configuration:    encoderConfig,
+		ForcePersistence: true,
 	}
+
+	// Create XML for SOAP request
+	data, err := xml.Marshal(request)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	// Call device with raw XML
+	response, err := camera.Device.CallMethodRaw(data)
+	if err != nil {
+		return fmt.Errorf("failed to set video encoder configuration: %v", err)
+	}
+	defer response.Body.Close()
 
 	return nil
 }
 
 // GetStreamURI retrieves the stream URI for a specific profile
 func GetStreamURI(camera *Camera, profileToken string) (string, error) {
-	request := media.GetStreamUri{
-		StreamSetup: media.StreamSetup{
-			Stream: media.StreamType("RTP-Unicast"),
-			Transport: media.Transport{
-				Protocol: media.TransportProtocol("RTSP"),
-			},
-		},
-		ProfileToken: xsd.ReferenceToken(profileToken),
+	// Create a struct that matches the expected parameter format
+	type StreamSetup struct {
+		Stream    string `xml:"Stream"`
+		Transport struct {
+			Protocol string `xml:"Protocol"`
+		} `xml:"Transport"`
 	}
 
-	response, err := camera.Device.CallMethod(request)
+	type GetStreamURI struct {
+		XMLName      xml.Name    `xml:"GetStreamUri"`
+		StreamSetup  StreamSetup `xml:"StreamSetup"`
+		ProfileToken string      `xml:"ProfileToken"`
+	}
+
+	// Create the request
+	request := GetStreamURI{
+		StreamSetup: StreamSetup{
+			Stream: "RTP-Unicast",
+			Transport: struct {
+				Protocol string `xml:"Protocol"`
+			}{
+				Protocol: "RTSP",
+			},
+		},
+		ProfileToken: profileToken,
+	}
+
+	// Marshal to XML
+	data, err := xml.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	// Call the device with raw XML
+	response, err := camera.Device.CallMethodRaw(data)
 	if err != nil {
 		return "", fmt.Errorf("failed to get stream URI: %v", err)
+	}
+	defer response.Body.Close()
+
+	// Read the response body
+	responseBody, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %v", err)
 	}
 
 	var envelope struct {
 		Body struct {
 			GetStreamUriResponse struct {
 				MediaUri struct {
-					Uri                 xsd.AnyURI   `xml:"Uri"`
-					InvalidAfterConnect xsd.Boolean  `xml:"InvalidAfterConnect"`
-					InvalidAfterReboot  xsd.Boolean  `xml:"InvalidAfterReboot"`
-					Timeout             xsd.Duration `xml:"Timeout"`
+					Uri                 string `xml:"Uri"`
+					InvalidAfterConnect bool   `xml:"InvalidAfterConnect"`
+					InvalidAfterReboot  bool   `xml:"InvalidAfterReboot"`
+					Timeout             string `xml:"Timeout"`
 				} `xml:"MediaUri"`
 			} `xml:"GetStreamUriResponse"`
 		} `xml:"Body"`
 	}
 
-	if err := response.Unmarshal(&envelope); err != nil {
-		return "", fmt.Errorf("failed to parse response: %v", err)
+	if err := xml.Unmarshal(responseBody, &envelope); err != nil {
+		return "", fmt.Errorf("failed to parse stream URI XML: %v", err)
 	}
 
-	return string(envelope.Body.GetStreamUriResponse.MediaUri.Uri), nil
+	return envelope.Body.GetStreamUriResponse.MediaUri.Uri, nil
 }

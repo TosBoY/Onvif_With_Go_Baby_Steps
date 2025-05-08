@@ -92,7 +92,7 @@ func (c *PiProxyClient) GetResolutions(configToken, profileToken string) (map[st
 	}
 
 	// Debug log the parsed result
-	log.Printf("Parsed response keys: %v", getMapKeys(result))
+	log.Printf("Parsed response keys: %v", getMapKeysFromClient(result))
 
 	// Check if resolutions were found in the response
 	if resolutions, ok := result["resolutions"]; ok {
@@ -130,7 +130,7 @@ func (c *PiProxyClient) GetResolutions(configToken, profileToken string) (map[st
 }
 
 // Helper to get keys from a map for debugging
-func getMapKeys(m map[string]interface{}) []string {
+func getMapKeysFromClient(m map[string]interface{}) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

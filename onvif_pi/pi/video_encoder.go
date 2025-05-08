@@ -397,6 +397,10 @@ func GetVideoEncoderOptions(camera *Camera, configToken string, profileToken str
 
 // ParseH264Options parses the raw response body to extract H.264 encoding options
 func ParseH264Options(responseBody interface{}) *H264Options {
+	// Convert response body to string for parsing
+	bodyStr := fmt.Sprintf("%v", responseBody)
+	fmt.Println("ParseH264Options: Processing XML of length:", len(bodyStr))
+
 	options := &H264Options{
 		ResolutionOptions:  make([]VideoResolution, 0),
 		FrameRateOptions:   make([]int, 0),
@@ -404,16 +408,6 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 		BitrateOptions:     make([]int, 0),
 		H264ProfileOptions: make([]string, 0),
 	}
-
-	// If response is nil, return empty options
-	if responseBody == nil {
-		fmt.Println("ParseH264Options: Response body is nil")
-		return options
-	}
-
-	// Convert response body to string for parsing
-	bodyStr := fmt.Sprintf("%v", responseBody)
-	fmt.Println("ParseH264Options: Processing XML of length:", len(bodyStr))
 
 	// First try to parse the XML using proper XML parsing
 	var envelope struct {
@@ -438,6 +432,10 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 							Min int `xml:"Min"`
 							Max int `xml:"Max"`
 						} `xml:"BitrateRange"`
+						GovLengthRange struct {
+							Min int `xml:"Min"`
+							Max int `xml:"Max"`
+						} `xml:"GovLengthRange"`
 						H264ProfilesSupported []string `xml:"H264ProfilesSupported"`
 					} `xml:"H264"`
 				} `xml:"Options"`
@@ -450,7 +448,7 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 		// Successfully parsed the XML
 		h264Options := envelope.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
 
-		// Extract resolutions from the XML
+		// Extract resolutions
 		for _, res := range h264Options.ResolutionsAvailable {
 			options.ResolutionOptions = append(options.ResolutionOptions, VideoResolution{
 				Width:  res.Width,
@@ -458,38 +456,79 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 			})
 		}
 
-		fmt.Printf("ParseH264Options: Found %d resolutions via XML parsing\n", len(options.ResolutionOptions))
-
 		// Extract frame rate range
 		minFrameRate := h264Options.FrameRateRange.Min
 		maxFrameRate := h264Options.FrameRateRange.Max
+		fmt.Printf("ParseH264Options: Frame rate range: Min=%d, Max=%d\n", minFrameRate, maxFrameRate)
 		if maxFrameRate > 0 {
-			// Generate frame rate options
-			step := (maxFrameRate - minFrameRate) / 6
-			if step < 1 {
-				step = 1
+			// Generate a more reasonable set of frame rate options within the range
+			// Use a non-linear distribution to have more options at the lower end
+			if maxFrameRate <= 30 {
+				// For standard frame rates (up to 30 fps), provide common values
+				for _, rate := range []int{1, 2, 5, 8, 10, 15, 20, 25, 30} {
+					if rate >= minFrameRate && rate <= maxFrameRate {
+						options.FrameRateOptions = append(options.FrameRateOptions, rate)
+					}
+				}
+				// Always include max frame rate if it's not already in the list
+				lastIncludedRate := 0
+				if len(options.FrameRateOptions) > 0 {
+					lastIncludedRate = options.FrameRateOptions[len(options.FrameRateOptions)-1]
+				}
+				if lastIncludedRate != maxFrameRate {
+					options.FrameRateOptions = append(options.FrameRateOptions, maxFrameRate)
+				}
+			} else {
+				// For high frame rates (>30), provide a wider range
+				rates := []int{1, 5, 10, 15, 20, 25, 30, 50, 60}
+				for _, rate := range rates {
+					if rate >= minFrameRate && rate <= maxFrameRate {
+						options.FrameRateOptions = append(options.FrameRateOptions, rate)
+					}
+				}
+				// Include the max
+				if maxFrameRate > rates[len(rates)-1] {
+					options.FrameRateOptions = append(options.FrameRateOptions, maxFrameRate)
+				}
 			}
-			for rate := minFrameRate; rate <= maxFrameRate; rate += step {
-				options.FrameRateOptions = append(options.FrameRateOptions, rate)
-			}
-			// Make sure max is included
-			if len(options.FrameRateOptions) > 0 && options.FrameRateOptions[len(options.FrameRateOptions)-1] != maxFrameRate {
-				options.FrameRateOptions = append(options.FrameRateOptions, maxFrameRate)
+			// If no values were added (which shouldn't happen), add min and max
+			if len(options.FrameRateOptions) == 0 {
+				options.FrameRateOptions = append(options.FrameRateOptions, minFrameRate, maxFrameRate)
 			}
 		}
 
-		// Extract encoding interval range
+		// Extract encoding interval range and GOP length range
+		// Note: GOP length is directly related to encoding interval in many cameras
 		minInterval := h264Options.EncodingIntervalRange.Min
 		maxInterval := h264Options.EncodingIntervalRange.Max
+
+		minGovLength := h264Options.GovLengthRange.Min
+		maxGovLength := h264Options.GovLengthRange.Max
+
+		// If we have no explicit GOP length range, use encoding interval range
+		if minGovLength == 0 && maxGovLength == 0 {
+			minGovLength = minInterval
+			maxGovLength = maxInterval
+		}
+
+		fmt.Printf("ParseH264Options: Encoding interval range: Min=%d, Max=%d\n", minInterval, maxInterval)
+		fmt.Printf("ParseH264Options: GOP length range: Min=%d, Max=%d\n", minGovLength, maxGovLength)
+
 		if maxInterval > 0 {
-			step := (maxInterval - minInterval) / 6
-			if step < 1 {
-				step = 1
+			// For encoding intervals, provide a reasonable set of options
+			// These are typically small integers, so a linear distribution is fine
+			commonIntervals := []int{1, 2, 4, 5, 10, 15, 20, 25, 30}
+			for _, interval := range commonIntervals {
+				if interval >= minInterval && interval <= maxInterval {
+					options.EncodingIntervals = append(options.EncodingIntervals, interval)
+				}
 			}
-			for interval := minInterval; interval <= maxInterval; interval += step {
-				options.EncodingIntervals = append(options.EncodingIntervals, interval)
+			// Always include max interval if it's not already in the list
+			lastIncludedInterval := 0
+			if len(options.EncodingIntervals) > 0 {
+				lastIncludedInterval = options.EncodingIntervals[len(options.EncodingIntervals)-1]
 			}
-			if len(options.EncodingIntervals) > 0 && options.EncodingIntervals[len(options.EncodingIntervals)-1] != maxInterval {
+			if lastIncludedInterval != maxInterval && maxInterval > 0 {
 				options.EncodingIntervals = append(options.EncodingIntervals, maxInterval)
 			}
 		}
@@ -497,40 +536,67 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 		// Extract bitrate range
 		minBitrate := h264Options.BitrateRange.Min
 		maxBitrate := h264Options.BitrateRange.Max
+		fmt.Printf("ParseH264Options: Bitrate range: Min=%d, Max=%d\n", minBitrate, maxBitrate)
+
 		if maxBitrate > 0 {
-			// Generate logarithmic bitrate options
-			count := 8
-			if maxBitrate > 0 && minBitrate > 0 {
-				ratio := float64(maxBitrate) / float64(minBitrate)
-				step := ratio / float64(count-1)
-				for i := 0; i < count; i++ {
-					bitrate := int(float64(minBitrate) * math.Pow(step, float64(i)))
+			// Generate a logarithmic bitrate distribution
+			// This provides more options in the lower range and fewer in the higher range
+			// which is more useful for users
+
+			// Determine number of steps based on the range
+			numSteps := 8
+			if maxBitrate > 10000000 { // If max is >10Mbps, provide more options
+				numSteps = 10
+			}
+
+			// For very low bitrate cameras, use a linear scale
+			if maxBitrate <= 1000000 {
+				step := maxBitrate / numSteps
+				for i := 1; i <= numSteps; i++ {
+					bitrate := minBitrate + step*i
+					if bitrate > maxBitrate {
+						bitrate = maxBitrate
+					}
 					options.BitrateOptions = append(options.BitrateOptions, bitrate)
 				}
+			} else {
+				// For normal/high bitrate cameras, use a logarithmic scale
+				// This gives more options at lower bitrates where differences matter more
+				logMin := math.Log(float64(minBitrate))
+				logMax := math.Log(float64(maxBitrate))
+				step := (logMax - logMin) / float64(numSteps-1)
+
+				for i := 0; i < numSteps; i++ {
+					logVal := logMin + float64(i)*step
+					bitrate := int(math.Round(math.Exp(logVal)))
+					options.BitrateOptions = append(options.BitrateOptions, bitrate)
+				}
+			}
+
+			// Always ensure the max bitrate is included
+			if len(options.BitrateOptions) > 0 && options.BitrateOptions[len(options.BitrateOptions)-1] != maxBitrate {
+				options.BitrateOptions = append(options.BitrateOptions, maxBitrate)
 			}
 		}
 
 		// Extract H264 profiles
 		options.H264ProfileOptions = h264Options.H264ProfilesSupported
-		fmt.Printf("ParseH264Options: Found %d H264 profiles\n", len(options.H264ProfileOptions))
 
-		// If we managed to get data through XML parsing, return it
+		// If we got data through the XML parsing, return it
 		if len(options.ResolutionOptions) > 0 {
 			return options
 		}
 	}
 
-	// If XML parsing failed or returned no resolutions, try regex parsing
-	fmt.Printf("ParseH264Options: XML parsing failed or returned no resolutions, trying regex: %v\n", err)
+	// If XML parsing failed, fall back to regex/string parsing
+	fmt.Printf("ParseH264Options: XML parsing failed with error: %v. Falling back to regex parsing.\n", err)
 
-	// Use regex to find width-height pairs in XML format
-	// Pattern to match <Width>X</Width><Height>Y</Height> structure
-	widthHeightRegex := `<[^>]*Width>(\d+)<\/[^>]*Width>[^<]*<[^>]*Height>(\d+)<\/[^>]*Height>`
-	re := regexp.MustCompile(widthHeightRegex)
-	matches := re.FindAllStringSubmatch(bodyStr, -1)
+	// Extract resolutions using regex
+	resolutionRegex := `<tt:Width>(\d+)<\/tt:Width>\s*<tt:Height>(\d+)<\/tt:Height>`
+	reResolution := regexp.MustCompile(resolutionRegex)
+	resMatches := reResolution.FindAllStringSubmatch(bodyStr, -1)
 
-	// Process matches from regex
-	for _, match := range matches {
+	for _, match := range resMatches {
 		if len(match) == 3 {
 			width, _ := strconv.Atoi(match[1])
 			height, _ := strconv.Atoi(match[2])
@@ -543,106 +609,155 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 		}
 	}
 
-	fmt.Printf("ParseH264Options: Found %d resolutions via regex\n", len(options.ResolutionOptions))
+	// Extract frame rate range
+	frameRateRegex := `<tt:FrameRateRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:FrameRateRange>`
+	reFrameRate := regexp.MustCompile(frameRateRegex)
+	frMatch := reFrameRate.FindStringSubmatch(bodyStr)
 
-	// If still no resolutions, try simple text parsing (original approach)
-	if len(options.ResolutionOptions) == 0 {
-		fmt.Println("ParseH264Options: No resolutions found via regex, trying simple parsing")
+	if len(frMatch) == 3 {
+		minFrameRate, _ := strconv.Atoi(frMatch[1])
+		maxFrameRate, _ := strconv.Atoi(frMatch[2])
+		fmt.Printf("ParseH264Options: Frame rate range from regex: Min=%d, Max=%d\n", minFrameRate, maxFrameRate)
 
-		// Extract resolution from plain text mentions
-		resPattern := `[^0-9](\d{3,4})x(\d{3,4})[^0-9]`
-		resTex := regexp.MustCompile(resPattern)
-		resMatches := resTex.FindAllStringSubmatch(bodyStr, -1)
-
-		for _, match := range resMatches {
-			if len(match) == 3 {
-				width, _ := strconv.Atoi(match[1])
-				height, _ := strconv.Atoi(match[2])
-				if width > 0 && height > 0 {
-					options.ResolutionOptions = append(options.ResolutionOptions, VideoResolution{
-						Width:  width,
-						Height: height,
-					})
-				}
-			}
-		}
-
-		fmt.Printf("ParseH264Options: Found %d resolutions via text parsing\n", len(options.ResolutionOptions))
-	}
-
-	// Extract frame rate options if not already set
-	if len(options.FrameRateOptions) == 0 {
-		if strings.Contains(bodyStr, "FrameRateRange") {
-			frameratePattern := `<[^>]*FrameRateRange[^>]*>[^<]*<[^>]*Min>(\d+)<\/[^>]*Min>[^<]*<[^>]*Max>(\d+)<\/[^>]*Max>`
-			re := regexp.MustCompile(frameratePattern)
-			match := re.FindStringSubmatch(bodyStr)
-
-			if len(match) == 3 {
-				min, _ := strconv.Atoi(match[1])
-				max, _ := strconv.Atoi(match[2])
-				if min > 0 && max >= min {
-					step := (max - min) / 6
-					if step < 1 {
-						step = 1
-					}
-					for rate := min; rate <= max; rate += step {
+		// Generate frame rate options using the same logic as above
+		if maxFrameRate > 0 {
+			if maxFrameRate <= 30 {
+				for _, rate := range []int{1, 2, 5, 8, 10, 15, 20, 25, 30} {
+					if rate >= minFrameRate && rate <= maxFrameRate {
 						options.FrameRateOptions = append(options.FrameRateOptions, rate)
-					}
-					// Add max if not already added
-					if options.FrameRateOptions[len(options.FrameRateOptions)-1] != max {
-						options.FrameRateOptions = append(options.FrameRateOptions, max)
 					}
 				}
 			} else {
-				// Default frame rates
-				options.FrameRateOptions = []int{1, 5, 10, 15, 20, 25, 30}
+				rates := []int{1, 5, 10, 15, 20, 25, 30, 50, 60}
+				for _, rate := range rates {
+					if rate >= minFrameRate && rate <= maxFrameRate {
+						options.FrameRateOptions = append(options.FrameRateOptions, rate)
+					}
+				}
+				// Include the max
+				if maxFrameRate > rates[len(rates)-1] {
+					options.FrameRateOptions = append(options.FrameRateOptions, maxFrameRate)
+				}
 			}
-		} else {
-			// Default frame rates
-			options.FrameRateOptions = []int{1, 5, 10, 15, 20, 25, 30}
 		}
+	} else {
+		// Default frame rates if we couldn't extract from the XML
+		options.FrameRateOptions = []int{1, 5, 10, 15, 20, 25, 30}
 	}
 
-	// Extract encoding interval options if not already set
-	if len(options.EncodingIntervals) == 0 {
-		// Similar approach as frame rates
+	// Extract encoding interval range
+	encodingIntervalRegex := `<tt:EncodingIntervalRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:EncodingIntervalRange>`
+	reEncodingInterval := regexp.MustCompile(encodingIntervalRegex)
+	eiMatch := reEncodingInterval.FindStringSubmatch(bodyStr)
+
+	if len(eiMatch) == 3 {
+		minInterval, _ := strconv.Atoi(eiMatch[1])
+		maxInterval, _ := strconv.Atoi(eiMatch[2])
+		fmt.Printf("ParseH264Options: Encoding interval range from regex: Min=%d, Max=%d\n", minInterval, maxInterval)
+
+		// Generate encoding interval options
+		commonIntervals := []int{1, 2, 4, 5, 10, 15, 20, 25, 30}
+		for _, interval := range commonIntervals {
+			if interval >= minInterval && interval <= maxInterval {
+				options.EncodingIntervals = append(options.EncodingIntervals, interval)
+			}
+		}
+		// Include the max
+		if len(options.EncodingIntervals) > 0 && options.EncodingIntervals[len(options.EncodingIntervals)-1] != maxInterval && maxInterval > 0 {
+			options.EncodingIntervals = append(options.EncodingIntervals, maxInterval)
+		}
+	} else {
+		// Default encoding intervals
 		options.EncodingIntervals = []int{1, 5, 10, 15, 20, 25, 30}
 	}
 
-	// Extract bitrate options if not already set
-	if len(options.BitrateOptions) == 0 {
-		// Common bitrates for cameras
+	// Extract GOP length range
+	govLengthRegex := `<tt:GovLengthRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:GovLengthRange>`
+	reGovLength := regexp.MustCompile(govLengthRegex)
+	glMatch := reGovLength.FindStringSubmatch(bodyStr)
+
+	// Extract bitrate range
+	bitrateRegex := `<tt:BitrateRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:BitrateRange>`
+	reBitrate := regexp.MustCompile(bitrateRegex)
+	brMatch := reBitrate.FindStringSubmatch(bodyStr)
+
+	if len(brMatch) == 3 {
+		minBitrate, _ := strconv.Atoi(brMatch[1])
+		maxBitrate, _ := strconv.Atoi(brMatch[2])
+		fmt.Printf("ParseH264Options: Bitrate range from regex: Min=%d, Max=%d\n", minBitrate, maxBitrate)
+
+		// Generate bitrate options using the same logic as above
+		if maxBitrate > 0 {
+			numSteps := 8
+			if maxBitrate > 10000000 {
+				numSteps = 10
+			}
+
+			if maxBitrate <= 1000000 {
+				step := maxBitrate / numSteps
+				for i := 1; i <= numSteps; i++ {
+					bitrate := minBitrate + step*i
+					if bitrate > maxBitrate {
+						bitrate = maxBitrate
+					}
+					options.BitrateOptions = append(options.BitrateOptions, bitrate)
+				}
+			} else {
+				logMin := math.Log(float64(minBitrate))
+				logMax := math.Log(float64(maxBitrate))
+				step := (logMax - logMin) / float64(numSteps-1)
+
+				for i := 0; i < numSteps; i++ {
+					logVal := logMin + float64(i)*step
+					bitrate := int(math.Round(math.Exp(logVal)))
+					options.BitrateOptions = append(options.BitrateOptions, bitrate)
+				}
+			}
+		}
+	} else {
+		// Default bitrate options
 		options.BitrateOptions = []int{
 			64000, 128000, 256000, 512000, 1000000, 2000000, 4000000, 8000000,
 		}
 	}
 
-	// Extract H264 profile options if not already set
-	if len(options.H264ProfileOptions) == 0 {
-		if strings.Contains(bodyStr, "H264ProfilesSupported") {
-			if strings.Contains(bodyStr, "Baseline") {
-				options.H264ProfileOptions = append(options.H264ProfileOptions, "Baseline")
-			}
-			if strings.Contains(bodyStr, "Main") {
-				options.H264ProfileOptions = append(options.H264ProfileOptions, "Main")
-			}
-			if strings.Contains(bodyStr, "High") {
-				options.H264ProfileOptions = append(options.H264ProfileOptions, "High")
-			}
-			if strings.Contains(bodyStr, "Extended") {
-				options.H264ProfileOptions = append(options.H264ProfileOptions, "Extended")
+	// Extract H264 profile options
+	h264ProfilesRegex := `<tt:H264ProfilesSupported>(.*?)<\/tt:H264ProfilesSupported>`
+	reProfiles := regexp.MustCompile(h264ProfilesRegex)
+	profilesMatches := reProfiles.FindAllStringSubmatch(bodyStr, -1)
+
+	if len(profilesMatches) > 0 {
+		for _, match := range profilesMatches {
+			if len(match) == 2 {
+				profile := strings.TrimSpace(match[1])
+				if profile != "" {
+					options.H264ProfileOptions = append(options.H264ProfileOptions, profile)
+				}
 			}
 		}
-
-		// If still empty, use defaults
-		if len(options.H264ProfileOptions) == 0 {
-			options.H264ProfileOptions = []string{"Baseline", "Main", "High"}
+	} else {
+		// Try another approach for profiles
+		if strings.Contains(bodyStr, "Baseline") {
+			options.H264ProfileOptions = append(options.H264ProfileOptions, "Baseline")
+		}
+		if strings.Contains(bodyStr, "Main") {
+			options.H264ProfileOptions = append(options.H264ProfileOptions, "Main")
+		}
+		if strings.Contains(bodyStr, "High") {
+			options.H264ProfileOptions = append(options.H264ProfileOptions, "High")
+		}
+		if strings.Contains(bodyStr, "Extended") {
+			options.H264ProfileOptions = append(options.H264ProfileOptions, "Extended")
 		}
 	}
 
-	// Final check - if no resolutions were found at all, use common defaults
+	// If we have no profiles, use defaults
+	if len(options.H264ProfileOptions) == 0 {
+		options.H264ProfileOptions = []string{"Baseline", "Main", "High"}
+	}
+
+	// If we have no resolutions, use defaults
 	if len(options.ResolutionOptions) == 0 {
-		fmt.Println("ParseH264Options: No resolutions found by any method, using common defaults")
 		options.ResolutionOptions = []VideoResolution{
 			{Width: 1920, Height: 1080},
 			{Width: 1280, Height: 720},

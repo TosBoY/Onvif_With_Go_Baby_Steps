@@ -1,0 +1,9 @@
+{
+  "pi_proxy": {
+    "address": "raspberrypi.local",
+    "port": 8090
+  },
+  "server": {
+    "port": 8091
+  }
+}

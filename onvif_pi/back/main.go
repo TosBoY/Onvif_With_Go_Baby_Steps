@@ -220,7 +220,7 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Debug log the options received from Pi
-	log.Printf("getResolutions: Received options from Pi proxy with keys: %v", getMapKeys(options))
+	log.Printf("getResolutions: Received options from Pi proxy with keys: %v", getMapKeysFromClient(options))
 
 	// Key format conversion to match what frontend expects
 	// In the original onvif_back, the frontend expects "ResolutionsAvailable"

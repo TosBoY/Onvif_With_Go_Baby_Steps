@@ -671,10 +671,9 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 		options.EncodingIntervals = []int{1, 5, 10, 15, 20, 25, 30}
 	}
 
-	// Extract GOP length range
+	// Extract GOP length range - we can use this information if needed but not storing the match result
 	govLengthRegex := `<tt:GovLengthRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:GovLengthRange>`
-	reGovLength := regexp.MustCompile(govLengthRegex)
-	glMatch := reGovLength.FindStringSubmatch(bodyStr)
+	regexp.MustCompile(govLengthRegex) // Just compile but not storing the result since we're not using it
 
 	// Extract bitrate range
 	bitrateRegex := `<tt:BitrateRange>\s*<tt:Min>(\d+)<\/tt:Min>\s*<tt:Max>(\d+)<\/tt:Max>\s*<\/tt:BitrateRange>`

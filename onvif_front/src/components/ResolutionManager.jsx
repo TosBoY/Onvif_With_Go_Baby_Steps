@@ -75,13 +75,24 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
           } else if (data.FrameRateRange && data.FrameRateRange.Min) {
             defaultFrameRate = data.FrameRateRange.Min;
           }
+
+          // Get a default GOP length value
+          let defaultGovLength = 1;
+          if (data.encodingIntervals && data.encodingIntervals.length > 0) {
+            // Try to select a middle encoding interval value as default
+            const midIndex = Math.floor(data.encodingIntervals.length / 2);
+            defaultGovLength = data.encodingIntervals[midIndex];
+          } else if (data.GovLengthRange && data.GovLengthRange.Min) {
+            defaultGovLength = data.GovLengthRange.Min;
+          }
           
           setFormData({
             resolution: defaultIndex,
             frameRate: defaultFrameRate,
             bitRate: 4096, // Default bitrate
-            govLength: data.GovLengthRange && data.GovLengthRange.Min ? data.GovLengthRange.Min : 1,
-            h264Profile: data.H264ProfilesSupported && data.H264ProfilesSupported.length > 0 ? data.H264ProfilesSupported[0] : 'Main',
+            govLength: defaultGovLength,
+            h264Profile: data.h264Profiles && data.h264Profiles.length > 0 ? data.h264Profiles[0] :
+                         (data.H264ProfilesSupported && data.H264ProfilesSupported.length > 0 ? data.H264ProfilesSupported[0] : 'Main'),
             width: defaultRes.Width,
             height: defaultRes.Height
           });
@@ -149,10 +160,10 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       profileToken,
       width: selectedRes.Width,
       height: selectedRes.Height,
-      frameRate: parseInt(formData.frameRate, 10) || (options.FrameRateRange && options.FrameRateRange.Min ? options.FrameRateRange.Min : 1),
+      frameRate: parseInt(formData.frameRate, 10) || frameRateMin,
       bitRate: parseInt(formData.bitRate, 10) || 4096,
-      gopLength: parseInt(formData.govLength, 10) || (options.GovLengthRange && options.GovLengthRange.Min ? options.GovLengthRange.Min : 1),
-      h264Profile: formData.h264Profile || (options.H264ProfilesSupported && options.H264ProfilesSupported.length > 0 ? options.H264ProfilesSupported[0] : 'Main')
+      gopLength: parseInt(formData.govLength, 10) || govLengthMin,
+      h264Profile: formData.h264Profile || (h264Profiles.length > 0 ? h264Profiles[0] : 'Main')
     };
 
     try {
@@ -235,6 +246,34 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
     return ["Baseline", "Main", "High"];
   };
 
+  // Helper function for getting GOP length min value
+  const getGovLengthMin = () => {
+    // First try 'encodingIntervals' array for min value (from Pi component)
+    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
+      return Math.min(...options.encodingIntervals);
+    }
+    // Then try GovLengthRange (original format)
+    if (options.GovLengthRange && options.GovLengthRange.Min !== undefined) {
+      return options.GovLengthRange.Min;
+    }
+    // Default fallback
+    return 1;
+  };
+
+  // Helper function for getting GOP length max value
+  const getGovLengthMax = () => {
+    // First try 'encodingIntervals' array for max value (from Pi component)
+    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
+      return Math.max(...options.encodingIntervals);
+    }
+    // Then try GovLengthRange (original format)
+    if (options.GovLengthRange && options.GovLengthRange.Max !== undefined) {
+      return options.GovLengthRange.Max;
+    }
+    // Default fallback
+    return 60;
+  };
+
   const hasSpecificFrameRateValues = () => {
     return options.frameRates && options.frameRates.length > 0;
   };
@@ -243,8 +282,8 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
   const frameRateMin = getFrameRateMin();
   const frameRateMax = getFrameRateMax();
   const h264Profiles = getH264Profiles();
-  const govLengthMin = options.GovLengthRange && options.GovLengthRange.Min ? options.GovLengthRange.Min : 1;
-  const govLengthMax = options.GovLengthRange && options.GovLengthRange.Max ? options.GovLengthRange.Max : 60;
+  const govLengthMin = getGovLengthMin();
+  const govLengthMax = getGovLengthMax();
 
   return (
     <Card variant="outlined" sx={{ mb: 3 }}>

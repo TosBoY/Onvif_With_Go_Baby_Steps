@@ -16,6 +16,33 @@ const ProfileSelector = ({ profiles, onChange, selectedProfile }) => {
     onChange(value);
   };
 
+  const getProfileName = (profile) => {
+    // Try to access name with various possible paths
+    return profile.Name || 
+           (profile.name) || 
+           'Unnamed Profile';
+  };
+
+  const getProfileToken = (profile) => {
+    // Try to access token with various possible paths
+    return profile.Token || profile.token || 'Unknown';
+  };
+
+  const getVideoSourceInfo = (profile) => {
+    try {
+      // Try to get video source configuration info
+      const videoSource = profile.VideoSourceConfiguration || profile.VideoSource || profile.videoSourceConfiguration;
+      if (videoSource) {
+        const sourceName = videoSource.Name || videoSource.name || '';
+        const sourceToken = videoSource.SourceToken || videoSource.sourceToken || '';
+        return ` - Source: ${sourceName || sourceToken}`;
+      }
+    } catch (error) {
+      console.log('Error getting video source info:', error);
+    }
+    return '';
+  };
+
   return (
     <Box sx={{ mb: 3 }}>
       <Typography variant="h6" sx={{ mb: 1 }}>Camera Profile</Typography>
@@ -29,8 +56,8 @@ const ProfileSelector = ({ profiles, onChange, selectedProfile }) => {
           onChange={handleChange}
         >
           {profiles && profiles.map((p) => (
-            <MenuItem key={p.Token} value={p.Token}>
-              {p.Name} (Token: {p.Token})
+            <MenuItem key={getProfileToken(p)} value={getProfileToken(p)}>
+              {getProfileName(p)}{getVideoSourceInfo(p)} (Token: {getProfileToken(p)})
             </MenuItem>
           ))}
         </Select>

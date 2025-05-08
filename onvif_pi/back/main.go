@@ -212,16 +212,98 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resolutions, err := piClient.GetResolutions(configToken, profileToken)
+	options, err := piClient.GetResolutions(configToken, profileToken)
 	if err != nil {
 		log.Printf("getResolutions: Failed to get resolutions from Pi proxy: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to get resolutions: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	log.Println("getResolutions: Successfully retrieved resolutions via Pi proxy")
+	// Debug log the options received from Pi
+	log.Printf("getResolutions: Received options from Pi proxy with keys: %v", getMapKeys(options))
+
+	// Key format conversion to match what frontend expects
+	// In the original onvif_back, the frontend expects "ResolutionsAvailable"
+	// but our Pi component provides "resolutions"
+
+	// Make sure we have ResolutionsAvailable key for frontend compatibility
+	if resolutions, ok := options["resolutions"]; ok && options["ResolutionsAvailable"] == nil {
+		options["ResolutionsAvailable"] = resolutions
+		log.Printf("getResolutions: Added ResolutionsAvailable key for frontend compatibility")
+	}
+
+	// Ensure we have resolutions data one way or another
+	if options["ResolutionsAvailable"] == nil {
+		log.Printf("getResolutions: No resolution data found, adding default resolutions")
+		// Add default resolutions as fallback
+		defaultResolutions := []map[string]interface{}{
+			{"Width": 1920, "Height": 1080},
+			{"Width": 1280, "Height": 720},
+			{"Width": 640, "Height": 480},
+			{"Width": 320, "Height": 240},
+		}
+
+		// Convert map slice to interface slice for compatible JSON output
+		resolutionsInterface := make([]interface{}, len(defaultResolutions))
+		for i, res := range defaultResolutions {
+			resolutionsInterface[i] = res
+		}
+
+		options["ResolutionsAvailable"] = resolutionsInterface
+	}
+
+	// Ensure we also have the right format for resolution objects
+	// The frontend expects "Width" and "Height" (capital first letter)
+	if resolutions, ok := options["ResolutionsAvailable"].([]interface{}); ok {
+		formattedResolutions := make([]interface{}, 0, len(resolutions))
+
+		for _, res := range resolutions {
+			if resMap, ok := res.(map[string]interface{}); ok {
+				formattedRes := make(map[string]interface{})
+
+				// Check for both lowercase and uppercase keys and use the proper format
+				if width, ok := resMap["width"]; ok {
+					formattedRes["Width"] = width
+				} else if width, ok := resMap["Width"]; ok {
+					formattedRes["Width"] = width
+				}
+
+				if height, ok := resMap["height"]; ok {
+					formattedRes["Height"] = height
+				} else if height, ok := resMap["Height"]; ok {
+					formattedRes["Height"] = height
+				}
+
+				// Only add if we have both width and height
+				if formattedRes["Width"] != nil && formattedRes["Height"] != nil {
+					formattedResolutions = append(formattedResolutions, formattedRes)
+				}
+			}
+		}
+
+		if len(formattedResolutions) > 0 {
+			log.Printf("getResolutions: Reformatted %d resolutions with proper key capitalization",
+				len(formattedResolutions))
+			options["ResolutionsAvailable"] = formattedResolutions
+		}
+	}
+
+	// Log what we're sending to frontend
+	log.Println("getResolutions: Successfully retrieved and formatted resolutions via Pi proxy")
+	jsonBytes, _ := json.MarshalIndent(options, "", "  ")
+	log.Printf("getResolutions: Sending to frontend: %s", string(jsonBytes))
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resolutions)
+	json.NewEncoder(w).Encode(options)
+}
+
+// Helper to get keys from a map for debugging
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // Handler to change resolution via Pi proxy

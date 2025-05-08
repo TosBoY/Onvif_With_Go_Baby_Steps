@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/use-go/onvif/media"
 	mxsd "github.com/use-go/onvif/xsd"
@@ -365,4 +366,219 @@ func SetH264Profile(c *Camera, configToken, profile string) (bool, error) {
 	}
 
 	return true, nil // Profile supported
+}
+
+// Add logging to ParseH264Options to debug empty resolutions
+func ParseH264Options(options interface{}) map[string]interface{} {
+	result := make(map[string]interface{})
+
+	// Check if we received any options
+	if options == nil {
+		fmt.Println("ParseH264Options: No options provided (nil)")
+		return result
+	}
+
+	// Log raw options for debugging
+	fmt.Printf("ParseH264Options: Raw options received: %+v\n", options)
+
+	// Try to extract the available resolutions
+	if videoOptions, ok := options.(map[string]interface{}); ok {
+		// Extract available resolutions if present
+		if resolutions, ok := videoOptions["ResolutionsAvailable"].([]interface{}); ok {
+			result["ResolutionsAvailable"] = resolutions
+			fmt.Printf("ParseH264Options: Found %d resolutions\n", len(resolutions))
+		} else {
+			fmt.Println("ParseH264Options: No ResolutionsAvailable found or invalid type")
+			// For debugging: Try to find any resolution-like fields in the response
+			for k, v := range videoOptions {
+				if strings.Contains(strings.ToLower(k), "resolution") {
+					fmt.Printf("ParseH264Options: Found resolution-like field: %s = %+v\n", k, v)
+				}
+			}
+			result["ResolutionsAvailable"] = []interface{}{}
+		}
+
+		// Extract frame rate range if present
+		if frameRateRange, ok := videoOptions["FrameRateRange"].(map[string]interface{}); ok {
+			result["FrameRateRange"] = frameRateRange
+			fmt.Printf("ParseH264Options: Found frame rate range: min=%v, max=%v\n",
+				frameRateRange["Min"], frameRateRange["Max"])
+		} else {
+			fmt.Println("ParseH264Options: No FrameRateRange found or invalid type")
+			// Check for other frame rate fields
+			for k, v := range videoOptions {
+				if strings.Contains(strings.ToLower(k), "frame") && strings.Contains(strings.ToLower(k), "rate") {
+					fmt.Printf("ParseH264Options: Found frame rate field: %s = %+v\n", k, v)
+				}
+			}
+		}
+
+		// Extract frame rates directly from the response for compatibility
+		frameRates := extractFrameRates(videoOptions)
+		result["frameRates"] = frameRates
+
+		// Extract available H.264 profiles if present
+		if h264Profiles, ok := videoOptions["H264ProfilesSupported"].([]interface{}); ok {
+			result["H264ProfilesSupported"] = h264Profiles
+			fmt.Printf("ParseH264Options: Found %d H264 profiles\n", len(h264Profiles))
+		} else {
+			// Try alternative fields and format strings as needed
+			h264Profiles := extractH264Profiles(videoOptions)
+			result["H264ProfilesSupported"] = h264Profiles
+		}
+
+		// Extract encoding intervals
+		if encodingIntervals, ok := videoOptions["EncodingIntervalRange"].(map[string]interface{}); ok {
+			min := 1
+			max := 30
+
+			if minVal, ok := encodingIntervals["Min"].(float64); ok {
+				min = int(minVal)
+			}
+			if maxVal, ok := encodingIntervals["Max"].(float64); ok {
+				max = int(maxVal)
+			}
+
+			intervals := make([]int, 0)
+			step := (max - min) / 6
+			if step < 1 {
+				step = 1
+			}
+
+			for i := min; i <= max; i += step {
+				intervals = append(intervals, i)
+			}
+			if len(intervals) > 0 && intervals[len(intervals)-1] != max {
+				intervals = append(intervals, max)
+			}
+
+			result["encodingIntervals"] = intervals
+		} else {
+			// Default encoding intervals
+			result["encodingIntervals"] = []int{1, 5, 10, 15, 20, 25, 30}
+		}
+
+		// Include error message if resolutions are empty but other data exists
+		if len(result["ResolutionsAvailable"].([]interface{})) == 0 && len(frameRates) > 0 {
+			fmt.Println("ParseH264Options: WARNING - Got frame rates but no resolutions!")
+
+			// Add common resolutions as fallback if the camera doesn't provide them
+			fmt.Println("ParseH264Options: Adding fallback resolutions")
+			fallbackResolutions := []map[string]interface{}{
+				{"Width": 1920, "Height": 1080},
+				{"Width": 1280, "Height": 720},
+				{"Width": 640, "Height": 480},
+				{"Width": 320, "Height": 240},
+			}
+
+			// Convert to generic interface slice
+			resolutionsInterface := make([]interface{}, len(fallbackResolutions))
+			for i, res := range fallbackResolutions {
+				resolutionsInterface[i] = res
+			}
+
+			result["ResolutionsAvailable"] = resolutionsInterface
+		}
+	}
+
+	// Log the final parsed result
+	fmt.Printf("ParseH264Options: Final result: %+v\n", result)
+
+	return result
+}
+
+// Helper to extract frame rates from various possible sources in the response
+func extractFrameRates(options map[string]interface{}) []int {
+	// Default values if we can't find anything
+	defaultRates := []int{1, 5, 10, 15, 20, 25, 30}
+
+	// Try to find frame rate information
+	if frameRateRange, ok := options["FrameRateRange"].(map[string]interface{}); ok {
+		min := 1
+		max := 30
+
+		if minVal, ok := frameRateRange["Min"].(float64); ok {
+			min = int(minVal)
+		}
+		if maxVal, ok := frameRateRange["Max"].(float64); ok {
+			max = int(maxVal)
+		}
+
+		// Generate a reasonable set of frame rates
+		rates := make([]int, 0)
+		step := (max - min) / 6
+		if step < 1 {
+			step = 1
+		}
+
+		for i := min; i <= max; i += step {
+			rates = append(rates, i)
+		}
+		if len(rates) > 0 && rates[len(rates)-1] != max {
+			rates = append(rates, max)
+		}
+
+		return rates
+	}
+
+	// Check for other possible frame rate fields
+	for k, v := range options {
+		if strings.Contains(strings.ToLower(k), "framerate") {
+			fmt.Printf("extractFrameRates: Found field %s with value %+v\n", k, v)
+			// Try to parse based on value type
+			// Not implemented - would need to handle specific cases
+		}
+	}
+
+	return defaultRates
+}
+
+// Helper to extract H264 profiles from various possible sources in the response
+func extractH264Profiles(options map[string]interface{}) []string {
+	// Default values if we can't find anything
+	defaultProfiles := []string{"Baseline", "Main", "High"}
+
+	// Try various field names that might contain profile information
+	possibleFields := []string{
+		"H264ProfilesSupported", "H264ProfileSupported",
+		"ProfilesSupported", "ProfileSupported",
+		"H264Profiles", "H264Profile",
+	}
+
+	for _, field := range possibleFields {
+		if profiles, ok := options[field]; ok {
+			fmt.Printf("extractH264Profiles: Found field %s with value %+v\n", field, profiles)
+
+			// Try to convert to string slice based on type
+			switch v := profiles.(type) {
+			case []interface{}:
+				strProfiles := make([]string, len(v))
+				for i, p := range v {
+					if str, ok := p.(string); ok {
+						strProfiles[i] = str
+					} else {
+						// Convert to string if possible
+						strProfiles[i] = fmt.Sprintf("%v", p)
+					}
+				}
+				return strProfiles
+
+			case []string:
+				return v
+
+			case string:
+				// Single string value - might be comma separated or a single profile
+				if strings.Contains(v, ",") {
+					parts := strings.Split(v, ",")
+					for i, p := range parts {
+						parts[i] = strings.TrimSpace(p)
+					}
+					return parts
+				}
+				return []string{v}
+			}
+		}
+	}
+
+	return defaultProfiles
 }

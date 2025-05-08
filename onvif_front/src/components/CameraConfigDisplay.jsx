@@ -32,10 +32,19 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
     );
   }
   
-  // Find the profile and config objects directly from the props
-  // Note: Using Token (capital T) to match the data structure from ProfileSelector and ConfigSelector
-  const profileDetails = cameraInfo.profiles.find(p => p.Token === selectedProfile);
-  const configDetails = cameraInfo.configs.find(c => c.Token === selectedConfig);
+  // Find the profile and config objects with case-insensitive token comparison
+  // This handles variations like Token, token, or any case combination
+  const findByToken = (array, tokenToFind) => {
+    if (!array || !Array.isArray(array) || !tokenToFind) return null;
+    return array.find(item => {
+      // Check various possible token property names with case insensitivity
+      const itemToken = item.Token || item.token;
+      return itemToken && itemToken.toLowerCase() === tokenToFind.toLowerCase();
+    });
+  };
+  
+  const profileDetails = findByToken(cameraInfo.profiles, selectedProfile);
+  const configDetails = findByToken(cameraInfo.configs, selectedConfig);
   
   // Debug output to help diagnose missing fields
   console.log("Found objects:", { profileDetails, configDetails });
@@ -56,6 +65,10 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
           <Alert severity="warning">
             Could not find details for the selected profile or configuration. 
             (Selected profile: {selectedProfile}, Selected config: {selectedConfig})
+            <Box sx={{ mt: 1, fontSize: 'small' }}>
+              Available tokens: [{cameraInfo.profiles?.map(p => p.Token || p.token).join(', ')}],
+              [{cameraInfo.configs?.map(c => c.Token || c.token).join(', ')}]
+            </Box>
           </Alert>
         </CardContent>
       </Card>
@@ -67,7 +80,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
       <CardContent>
         <Box sx={{ mb: 3 }}>
           <Typography variant="subtitle1" color="primary" fontWeight="bold">
-            Profile: {profileDetails.Name}
+            Profile: {profileDetails.Name || profileDetails.name}
           </Typography>
           
           <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
@@ -75,11 +88,11 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
               <TableBody>
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Profile Token</TableCell>
-                  <TableCell>{profileDetails.Token}</TableCell>
+                  <TableCell>{profileDetails.Token || profileDetails.token}</TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Profile Name</TableCell>
-                  <TableCell>{profileDetails.Name}</TableCell>
+                  <TableCell>{profileDetails.Name || profileDetails.name}</TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Fixed</TableCell>
@@ -100,15 +113,15 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
               <TableBody>
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Config Token</TableCell>
-                  <TableCell>{configDetails.Token}</TableCell>
+                  <TableCell>{configDetails.Token || configDetails.token}</TableCell>
                 </TableRow>
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Encoding</TableCell>
-                  <TableCell>{configDetails.Encoding}</TableCell>
+                  <TableCell>{configDetails.Encoding || configDetails.encoding}</TableCell>
                 </TableRow>
                 
                 {/* Resolution - try different property paths */}
-                {(configDetails.Resolution || configDetails.Width) && (
+                {(configDetails.Resolution || configDetails.Width || configDetails.width) && (
                   <TableRow>
                     <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Resolution</TableCell>
                     <TableCell>
@@ -119,11 +132,11 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
                 
                 <TableRow>
                   <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Quality</TableCell>
-                  <TableCell>{configDetails.Quality}</TableCell>
+                  <TableCell>{configDetails.Quality || configDetails.quality}</TableCell>
                 </TableRow>
                 
                 {/* Frame Rate - try different property paths */}
-                {(configDetails.RateControl || configDetails.FrameRate || configDetails.FrameRateLimit) && (
+                {(configDetails.RateControl || configDetails.FrameRate || configDetails.FrameRateLimit || configDetails.frameRate || configDetails.frameRateLimit) && (
                   <TableRow>
                     <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Frame Rate</TableCell>
                     <TableCell>
@@ -133,7 +146,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
                 )}
                 
                 {/* Bit Rate - try different property paths */}
-                {(configDetails.RateControl || configDetails.Bitrate || configDetails.BitrateLimit) && (
+                {(configDetails.RateControl || configDetails.Bitrate || configDetails.BitrateLimit || configDetails.bitrate || configDetails.bitrateLimit) && (
                   <TableRow>
                     <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>Bit Rate</TableCell>
                     <TableCell>
@@ -143,7 +156,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
                 )}
                 
                 {/* GOP Length - try different property paths */}
-                {(configDetails.H264 || configDetails.GovLength) && (
+                {(configDetails.H264 || configDetails.GovLength || configDetails.govLength) && (
                   <TableRow>
                     <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>GOP Length</TableCell>
                     <TableCell>
@@ -153,7 +166,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
                 )}
                 
                 {/* H264 Profile - try different property paths */}
-                {(configDetails.H264 || configDetails.H264Profile) && (
+                {(configDetails.H264 || configDetails.H264Profile || configDetails.h264Profile) && (
                   <TableRow>
                     <TableCell component="th" scope="row" sx={{ fontWeight: 'bold' }}>H264 Profile</TableCell>
                     <TableCell>
@@ -161,14 +174,6 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
                     </TableCell>
                   </TableRow>
                 )}
-
-                {/* Add debug row to see all available properties */}
-                <TableRow>
-                  <TableCell component="th" scope="row" sx={{ fontWeight: 'bold', color: 'gray' }}>All Properties</TableCell>
-                  <TableCell sx={{ fontSize: '0.7rem', color: 'gray', wordBreak: 'break-all' }}>
-                    {Object.keys(configDetails).join(', ')}
-                  </TableCell>
-                </TableRow>
               </TableBody>
             </Table>
           </TableContainer>

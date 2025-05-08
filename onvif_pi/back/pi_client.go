@@ -76,12 +76,66 @@ func (c *PiProxyClient) GetResolutions(configToken, profileToken string) (map[st
 		return nil, fmt.Errorf("Pi proxy returned error status %d: %s", resp.StatusCode, string(body))
 	}
 
+	// Read the raw response for debugging
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	// Debug log the raw response
+	log.Printf("Raw response from Pi proxy: %s", string(bodyBytes))
+
 	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(bodyBytes, &result); err != nil {
+		log.Printf("ERROR parsing resolutions response: %v", err)
 		return nil, fmt.Errorf("failed to parse resolutions response: %v", err)
 	}
 
+	// Debug log the parsed result
+	log.Printf("Parsed response keys: %v", getMapKeys(result))
+
+	// Check if resolutions were found in the response
+	if resolutions, ok := result["resolutions"]; ok {
+		if resList, ok := resolutions.([]interface{}); ok {
+			log.Printf("Found %d resolutions in response", len(resList))
+			if len(resList) > 0 {
+				// Check the first resolution
+				if res, ok := resList[0].(map[string]interface{}); ok {
+					log.Printf("First resolution: width=%v, height=%v", res["width"], res["height"])
+				}
+			}
+		} else {
+			log.Printf("WARNING: 'resolutions' key exists but is not a list: %T", resolutions)
+		}
+	} else {
+		log.Printf("WARNING: No 'resolutions' key found in response!")
+		// Create an empty resolutions array if not present
+		result["resolutions"] = []interface{}{}
+	}
+
+	// Add default resolutions if none were found
+	if resolutions, ok := result["resolutions"].([]interface{}); ok && len(resolutions) == 0 {
+		log.Printf("Adding default resolutions as fallback")
+		result["resolutions"] = []interface{}{
+			map[string]interface{}{"width": 1920, "height": 1080},
+			map[string]interface{}{"width": 1280, "height": 720},
+			map[string]interface{}{"width": 640, "height": 480},
+			map[string]interface{}{"width": 320, "height": 240},
+		}
+		// Also ensure proper format for the frontend
+		result["ResolutionsAvailable"] = result["resolutions"]
+	}
+
 	return result, nil
+}
+
+// Helper to get keys from a map for debugging
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // ChangeResolution sends a request to change resolution via the Pi proxy

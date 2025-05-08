@@ -232,6 +232,52 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 		log.Printf("getResolutions: Added ResolutionsAvailable key for frontend compatibility")
 	}
 
+	// Add proper GovLengthRange object based on encodingIntervals array
+	// This ensures the web UI shows the correct GOP length range
+	if encodingIntervals, ok := options["encodingIntervals"].([]interface{}); ok && len(encodingIntervals) > 0 {
+		log.Printf("getResolutions: Found encoding intervals: %v", encodingIntervals)
+
+		// Find min and max values
+		var minGov, maxGov float64
+		if len(encodingIntervals) == 1 {
+			// If only one value, set it as both min and max
+			if num, ok := encodingIntervals[0].(float64); ok {
+				minGov, maxGov = num, num
+			} else if num, ok := encodingIntervals[0].(int); ok {
+				minGov, maxGov = float64(num), float64(num)
+			}
+		} else if len(encodingIntervals) > 1 {
+			// Multiple intervals, find min and max
+			minGov, maxGov = 999999, 0
+			for _, val := range encodingIntervals {
+				var numVal float64
+				if num, ok := val.(float64); ok {
+					numVal = num
+				} else if num, ok := val.(int); ok {
+					numVal = float64(num)
+				}
+
+				if numVal > 0 {
+					if numVal < minGov {
+						minGov = numVal
+					}
+					if numVal > maxGov {
+						maxGov = numVal
+					}
+				}
+			}
+		}
+
+		// Add GovLengthRange with min and max values
+		if minGov > 0 && maxGov > 0 {
+			options["GovLengthRange"] = map[string]interface{}{
+				"Min": minGov,
+				"Max": maxGov,
+			}
+			log.Printf("getResolutions: Added GovLengthRange with Min=%v, Max=%v based on encoding intervals", minGov, maxGov)
+		}
+	}
+
 	// Ensure we have resolutions data one way or another
 	if options["ResolutionsAvailable"] == nil {
 		log.Printf("getResolutions: No resolution data found, adding default resolutions")

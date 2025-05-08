@@ -65,9 +65,20 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
           const defaultIndex = 0;
           const defaultRes = data.ResolutionsAvailable[defaultIndex];
           
+          // Set a default frame rate based on available options
+          let defaultFrameRate = 1;
+          if (data.frameRates && data.frameRates.length > 0) {
+            // Try to select a middle frame rate value from the available options
+            // or the first one if there's only one option
+            const midIndex = Math.floor(data.frameRates.length / 2);
+            defaultFrameRate = data.frameRates[midIndex];
+          } else if (data.FrameRateRange && data.FrameRateRange.Min) {
+            defaultFrameRate = data.FrameRateRange.Min;
+          }
+          
           setFormData({
             resolution: defaultIndex,
-            frameRate: data.FrameRateRange && data.FrameRateRange.Min ? data.FrameRateRange.Min : 1,
+            frameRate: defaultFrameRate,
             bitRate: 4096, // Default bitrate
             govLength: data.GovLengthRange && data.GovLengthRange.Min ? data.GovLengthRange.Min : 1,
             h264Profile: data.H264ProfilesSupported && data.H264ProfilesSupported.length > 0 ? data.H264ProfilesSupported[0] : 'Main',
@@ -183,9 +194,55 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
     return <Typography>Select a valid profile and configuration token first</Typography>;
   }
 
-  // Safely get range values with fallbacks
-  const frameRateMin = options.FrameRateRange && options.FrameRateRange.Min ? options.FrameRateRange.Min : 1;
-  const frameRateMax = options.FrameRateRange && options.FrameRateRange.Max ? options.FrameRateRange.Max : 30;
+  // Safe accessors for frame rate and range values with fallbacks
+  const getFrameRateMin = () => {
+    // First try to get from frameRates array
+    if (options.frameRates && options.frameRates.length > 0) {
+      return Math.min(...options.frameRates);
+    }
+    // Then try from FrameRateRange (original format)
+    if (options.FrameRateRange && options.FrameRateRange.Min !== undefined) {
+      return options.FrameRateRange.Min;
+    }
+    // Default fallback
+    return 1;
+  };
+
+  const getFrameRateMax = () => {
+    // First try to get from frameRates array
+    if (options.frameRates && options.frameRates.length > 0) {
+      return Math.max(...options.frameRates);
+    }
+    // Then try from FrameRateRange (original format)
+    if (options.FrameRateRange && options.FrameRateRange.Max !== undefined) {
+      return options.FrameRateRange.Max;
+    }
+    // Default fallback
+    return 30;
+  };
+  
+  // Helper function to get available H264 profiles
+  const getH264Profiles = () => {
+    // First try the 'h264Profiles' array (from Pi component)
+    if (options.h264Profiles && options.h264Profiles.length > 0) {
+      return options.h264Profiles;
+    }
+    // Then try the 'H264ProfilesSupported' array (original format)
+    if (options.H264ProfilesSupported && options.H264ProfilesSupported.length > 0) {
+      return options.H264ProfilesSupported;
+    }
+    // Default fallback
+    return ["Baseline", "Main", "High"];
+  };
+
+  const hasSpecificFrameRateValues = () => {
+    return options.frameRates && options.frameRates.length > 0;
+  };
+
+  // Safely get range values with fallbacks using our helper functions
+  const frameRateMin = getFrameRateMin();
+  const frameRateMax = getFrameRateMax();
+  const h264Profiles = getH264Profiles();
   const govLengthMin = options.GovLengthRange && options.GovLengthRange.Min ? options.GovLengthRange.Min : 1;
   const govLengthMax = options.GovLengthRange && options.GovLengthRange.Max ? options.GovLengthRange.Max : 60;
 
@@ -265,18 +322,18 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
         />
 
         {/* H264 profile selector */}
-        {options.H264ProfilesSupported && options.H264ProfilesSupported.length > 0 && (
+        {h264Profiles && h264Profiles.length > 0 && (
           <FormControl fullWidth sx={{ mb: 2 }}>
             <InputLabel id="h264-profile-label">H264 Profile</InputLabel>
             <Select
               labelId="h264-profile-label"
               id="h264-profile"
               name="h264Profile"
-              value={formData.h264Profile || options.H264ProfilesSupported[0]}
+              value={formData.h264Profile || h264Profiles[0]}
               label="H264 Profile"
               onChange={handleInputChange}
             >
-              {options.H264ProfilesSupported.map((profile) => (
+              {h264Profiles.map((profile) => (
                 <MenuItem key={profile} value={profile}>
                   {profile}
                 </MenuItem>

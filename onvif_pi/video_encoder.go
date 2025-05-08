@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"strings"
 
 	"github.com/use-go/onvif/media"
@@ -261,11 +263,19 @@ func GetAllVideoEncoderConfigurations(camera *Camera) ([]VideoEncoderConfigurati
 
 // GetVideoEncoderConfiguration retrieves a specific video encoder configuration by token
 func GetVideoEncoderConfiguration(camera *Camera, token string) (*VideoEncoderConfiguration, error) {
-	request := media.GetVideoEncoderConfiguration{
-		ConfigurationToken: token,
-	}
+	// For v0.0.9, we need to create a custom SOAP request for GetVideoEncoderConfiguration
+	soapEnvelope := `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" 
+                   xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+  <SOAP-ENV:Body>
+    <trt:GetVideoEncoderConfiguration>
+      <trt:ConfigurationToken>` + token + `</trt:ConfigurationToken>
+    </trt:GetVideoEncoderConfiguration>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`
 
-	response, err := camera.Device.CallMethod(request)
+	// Send the SOAP request as a custom HTTP request
+	response, err := camera.sendCustomSOAPRequest(soapEnvelope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video encoder configuration: %v", err)
 	}
@@ -344,16 +354,30 @@ func GetVideoEncoderConfiguration(camera *Camera, token string) (*VideoEncoderCo
 
 // GetVideoEncoderOptions retrieves the video encoder options for a specific configuration
 func GetVideoEncoderOptions(camera *Camera, configToken string, profileToken string) (interface{}, error) {
-	// Convert string tokens to the correct type for the older library version
-	configTokenRef := configToken
-	profileTokenRef := profileToken
+	// For v0.0.9, we need to create a custom SOAP request for GetVideoEncoderConfigurationOptions
+	soapEnvelope := `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" 
+                   xmlns:trt="http://www.onvif.org/ver10/media/wsdl">
+  <SOAP-ENV:Body>
+    <trt:GetVideoEncoderConfigurationOptions>`
 
-	request := media.GetVideoEncoderConfigurationOptions{
-		ConfigurationToken: &configTokenRef,
-		ProfileToken:       &profileTokenRef,
+	if configToken != "" {
+		soapEnvelope += `
+      <trt:ConfigurationToken>` + configToken + `</trt:ConfigurationToken>`
 	}
 
-	response, err := camera.Device.CallMethod(request)
+	if profileToken != "" {
+		soapEnvelope += `
+      <trt:ProfileToken>` + profileToken + `</trt:ProfileToken>`
+	}
+
+	soapEnvelope += `
+    </trt:GetVideoEncoderConfigurationOptions>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`
+
+	// Send the SOAP request
+	response, err := camera.sendCustomSOAPRequest(soapEnvelope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get video encoder options: %v", err)
 	}
@@ -459,143 +483,71 @@ func SetVideoEncoderConfiguration(
 		return fmt.Errorf("failed to get current configuration: %v", err)
 	}
 
-	// Create a simplified struct for the set operation that works with the older version
-	type Resolution struct {
-		Width  int `xml:"Width"`
-		Height int `xml:"Height"`
-	}
+	// For v0.0.9, we need to use a custom struct that matches the expected XML format
+	// Create a custom SOAP request for SetVideoEncoderConfiguration
+	soapEnvelope := `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" 
+                   xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+                   xmlns:tt="http://www.onvif.org/ver10/schema">
+  <SOAP-ENV:Body>
+    <trt:SetVideoEncoderConfiguration>
+      <trt:Configuration token="` + token + `">
+        <tt:Name>` + name + `</tt:Name>
+        <tt:UseCount>1</tt:UseCount>
+        <tt:Encoding>H264</tt:Encoding>
+        <tt:Resolution>
+          <tt:Width>` + fmt.Sprintf("%d", width) + `</tt:Width>
+          <tt:Height>` + fmt.Sprintf("%d", height) + `</tt:Height>
+        </tt:Resolution>
+        <tt:Quality>` + fmt.Sprintf("%.1f", config.Quality) + `</tt:Quality>
+        <tt:RateControl>
+          <tt:FrameRateLimit>` + fmt.Sprintf("%d", frameRate) + `</tt:FrameRateLimit>
+          <tt:EncodingInterval>` + fmt.Sprintf("%d", govLength) + `</tt:EncodingInterval>
+          <tt:BitrateLimit>` + fmt.Sprintf("%d", bitRate) + `</tt:BitrateLimit>
+        </tt:RateControl>
+        <tt:H264>
+          <tt:GovLength>` + fmt.Sprintf("%d", govLength) + `</tt:GovLength>
+          <tt:H264Profile>` + h264Profile + `</tt:H264Profile>
+        </tt:H264>
+        <tt:SessionTimeout>PT10S</tt:SessionTimeout>
+      </trt:Configuration>
+      <trt:ForcePersistence>true</trt:ForcePersistence>
+    </trt:SetVideoEncoderConfiguration>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`
 
-	type RateControl struct {
-		FrameRateLimit   int `xml:"FrameRateLimit"`
-		EncodingInterval int `xml:"EncodingInterval"`
-		BitrateLimit     int `xml:"BitrateLimit"`
-	}
-
-	type H264 struct {
-		GovLength   int    `xml:"GovLength"`
-		H264Profile string `xml:"H264Profile"`
-	}
-
-	type Address struct {
-		Type        string `xml:"Type"`
-		IPv4Address string `xml:"IPv4Address"`
-	}
-
-	type Multicast struct {
-		Address   Address `xml:"Address"`
-		Port      int     `xml:"Port"`
-		TTL       int     `xml:"TTL"`
-		AutoStart bool    `xml:"AutoStart"`
-	}
-
-	type EncoderConfiguration struct {
-		Token       string      `xml:"token,attr"`
-		Name        string      `xml:"Name"`
-		Encoding    string      `xml:"Encoding"`
-		Resolution  Resolution  `xml:"Resolution"`
-		Quality     float64     `xml:"Quality"`
-		RateControl RateControl `xml:"RateControl"`
-		H264        H264        `xml:"H264"`
-		Multicast   Multicast   `xml:"Multicast"`
-	}
-
-	type SetVideoEncoderConfiguration struct {
-		XMLName          xml.Name             `xml:"SetVideoEncoderConfiguration"`
-		Configuration    EncoderConfiguration `xml:"Configuration"`
-		ForcePersistence bool                 `xml:"ForcePersistence"`
-	}
-
-	// Build the custom request
-	encoderConfig := EncoderConfiguration{
-		Token:    token,
-		Name:     name,
-		Encoding: "H264",
-		Resolution: Resolution{
-			Width:  width,
-			Height: height,
-		},
-		Quality: config.Quality,
-		RateControl: RateControl{
-			FrameRateLimit:   frameRate,
-			EncodingInterval: govLength,
-			BitrateLimit:     bitRate,
-		},
-		H264: H264{
-			GovLength:   govLength,
-			H264Profile: h264Profile,
-		},
-	}
-
-	if config.Multicast != nil {
-		encoderConfig.Multicast = Multicast{
-			Address: Address{
-				Type:        "IPv4",
-				IPv4Address: config.Multicast.Address,
-			},
-			Port:      config.Multicast.Port,
-			TTL:       config.Multicast.TTL,
-			AutoStart: config.Multicast.AutoStart,
-		}
-	}
-
-	request := SetVideoEncoderConfiguration{
-		Configuration:    encoderConfig,
-		ForcePersistence: true,
-	}
-
-	// Create XML for SOAP request
-	data, err := xml.Marshal(request)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %v", err)
-	}
-
-	// Call device with raw XML
-	response, err := camera.Device.CallMethodRaw(data)
+	// Send the raw SOAP request
+	resp, err := camera.sendCustomSOAPRequest(soapEnvelope)
 	if err != nil {
 		return fmt.Errorf("failed to set video encoder configuration: %v", err)
 	}
-	defer response.Body.Close()
+	defer resp.Body.Close()
 
 	return nil
 }
 
 // GetStreamURI retrieves the stream URI for a specific profile
 func GetStreamURI(camera *Camera, profileToken string) (string, error) {
-	// Create a struct that matches the expected parameter format
-	type StreamSetup struct {
-		Stream    string `xml:"Stream"`
-		Transport struct {
-			Protocol string `xml:"Protocol"`
-		} `xml:"Transport"`
-	}
+	// For v0.0.9, we need to create a custom SOAP request for GetStreamUri
+	soapEnvelope := `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://www.w3.org/2003/05/soap-envelope" 
+                   xmlns:trt="http://www.onvif.org/ver10/media/wsdl"
+                   xmlns:tt="http://www.onvif.org/ver10/schema">
+  <SOAP-ENV:Body>
+    <trt:GetStreamUri>
+      <trt:StreamSetup>
+        <tt:Stream>RTP-Unicast</tt:Stream>
+        <tt:Transport>
+          <tt:Protocol>RTSP</tt:Protocol>
+        </tt:Transport>
+      </trt:StreamSetup>
+      <trt:ProfileToken>` + profileToken + `</trt:ProfileToken>
+    </trt:GetStreamUri>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`
 
-	type GetStreamURI struct {
-		XMLName      xml.Name    `xml:"GetStreamUri"`
-		StreamSetup  StreamSetup `xml:"StreamSetup"`
-		ProfileToken string      `xml:"ProfileToken"`
-	}
-
-	// Create the request
-	request := GetStreamURI{
-		StreamSetup: StreamSetup{
-			Stream: "RTP-Unicast",
-			Transport: struct {
-				Protocol string `xml:"Protocol"`
-			}{
-				Protocol: "RTSP",
-			},
-		},
-		ProfileToken: profileToken,
-	}
-
-	// Marshal to XML
-	data, err := xml.Marshal(request)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %v", err)
-	}
-
-	// Call the device with raw XML
-	response, err := camera.Device.CallMethodRaw(data)
+	// Send the SOAP request
+	response, err := camera.sendCustomSOAPRequest(soapEnvelope)
 	if err != nil {
 		return "", fmt.Errorf("failed to get stream URI: %v", err)
 	}
@@ -625,4 +577,37 @@ func GetStreamURI(camera *Camera, profileToken string) (string, error) {
 	}
 
 	return envelope.Body.GetStreamUriResponse.MediaUri.Uri, nil
+}
+
+// Helper method to send custom SOAP requests
+func (camera *Camera) sendCustomSOAPRequest(soapEnvelope string) (*http.Response, error) {
+	// Build the SOAP request URL
+	endpoint := fmt.Sprintf("http://%s:%d/onvif/media", camera.IP, camera.Port)
+
+	// Create a new HTTP request
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBufferString(soapEnvelope))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %v", err)
+	}
+
+	// Set headers
+	req.SetBasicAuth(camera.Username, camera.Password)
+	req.Header.Set("Content-Type", "application/soap+xml; charset=utf-8")
+	req.Header.Set("SOAPAction", "http://www.onvif.org/ver10/media/wsdl")
+
+	// Send the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send HTTP request: %v", err)
+	}
+
+	// Check if the request was successful
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		body, _ := ioutil.ReadAll(resp.Body)
+		return nil, fmt.Errorf("HTTP error %d: %s", resp.StatusCode, body)
+	}
+
+	return resp, nil
 }

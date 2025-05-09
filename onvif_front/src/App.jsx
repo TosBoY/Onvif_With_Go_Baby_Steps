@@ -101,23 +101,36 @@ const CameraControlPanel = () => {
     if (!selectedConfig) return;
     
     try {
-      console.log("Refreshing only the config display for:", selectedConfig);
+      console.log("Refreshing the config display for:", selectedConfig);
       const updatedConfig = await api.getSingleConfig(selectedConfig);
       console.log("Received updated config:", updatedConfig);
       
-      // Create a new cameraInfo object with just the updated config
+      // Only update the specific configuration without reloading everything
       if (cameraInfo && cameraInfo.configs) {
-        const updatedConfigs = cameraInfo.configs.map(config => 
-          config.Token === selectedConfig ? { ...config, ...updatedConfig } : config
-        );
+        // Create a new configs array with the updated config
+        const updatedConfigs = cameraInfo.configs.map(config => {
+          // Case-insensitive token comparison for robustness
+          const configToken = config.Token || config.token;
+          if (configToken && configToken.toLowerCase() === selectedConfig.toLowerCase()) {
+            // Merge the existing config with the updated values
+            console.log("Updating config:", configToken);
+            return { 
+              ...config,               // Keep existing properties
+              ...updatedConfig,        // Add updated properties
+              _updated: Date.now()     // Add timestamp to force detection of change
+            };
+          }
+          return config;  // Return unchanged configs
+        });
         
-        console.log("Updated configs:", updatedConfigs);
-        
-        // Set the updated cameraInfo without triggering a full page refresh
-        setCameraInfo({
+        // Create a new cameraInfo object to trigger re-render, only changing configs
+        const newCameraInfo = {
           ...cameraInfo,
           configs: updatedConfigs
-        });
+        };
+        
+        console.log("Updated config in camera info state");
+        setCameraInfo(newCameraInfo);
       }
     } catch (err) {
       console.error("Error refreshing config display:", err);

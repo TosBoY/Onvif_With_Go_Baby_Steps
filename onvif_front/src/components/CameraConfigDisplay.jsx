@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   CardContent,
@@ -13,12 +14,13 @@ import {
 } from '@mui/material';
 
 const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) => {
-  // Direct approach without useState/useEffect to reduce complexity
-  console.log("CameraConfigDisplay props:", { selectedProfile, selectedConfig });
-  console.log("CameraConfigDisplay cameraInfo first items:", { 
-    firstProfile: cameraInfo?.profiles?.[0], 
-    firstConfig: cameraInfo?.configs?.[0] 
-  });
+  const [lastUpdate, setLastUpdate] = useState(Date.now());
+
+  // Simple effect to track updates
+  useEffect(() => {
+    setLastUpdate(Date.now());
+    console.log("CameraConfigDisplay updated");
+  }, [cameraInfo, selectedProfile, selectedConfig]);
   
   if (!cameraInfo || !selectedProfile || !selectedConfig) {
     return (
@@ -33,11 +35,9 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
   }
   
   // Find the profile and config objects with case-insensitive token comparison
-  // This handles variations like Token, token, or any case combination
   const findByToken = (array, tokenToFind) => {
     if (!array || !Array.isArray(array) || !tokenToFind) return null;
     return array.find(item => {
-      // Check various possible token property names with case insensitivity
       const itemToken = item.Token || item.token;
       return itemToken && itemToken.toLowerCase() === tokenToFind.toLowerCase();
     });
@@ -46,10 +46,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
   const profileDetails = findByToken(cameraInfo.profiles, selectedProfile);
   const configDetails = findByToken(cameraInfo.configs, selectedConfig);
   
-  // Debug output to help diagnose missing fields
-  console.log("Found objects:", { profileDetails, configDetails });
-  
-  // Helper function to safely navigate objects and get values with different possible property names
+  // Helper function to safely navigate objects and get values
   const getProperty = (obj, propertyNames) => {
     if (!obj) return null;
     for (const name of propertyNames) {
@@ -63,12 +60,7 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, cameraInfo }) =>
       <Card variant="outlined" sx={{ mb: 3, mt: 3, border: '1px solid #444' }}>
         <CardContent>
           <Alert severity="warning">
-            Could not find details for the selected profile or configuration. 
-            (Selected profile: {selectedProfile}, Selected config: {selectedConfig})
-            <Box sx={{ mt: 1, fontSize: 'small' }}>
-              Available tokens: [{cameraInfo.profiles?.map(p => p.Token || p.token).join(', ')}],
-              [{cameraInfo.configs?.map(c => c.Token || c.token).join(', ')}]
-            </Box>
+            Could not find details for the selected profile or configuration.
           </Alert>
         </CardContent>
       </Card>

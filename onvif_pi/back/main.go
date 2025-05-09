@@ -232,49 +232,108 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 		log.Printf("getResolutions: Added ResolutionsAvailable key for frontend compatibility")
 	}
 
-	// Add proper GovLengthRange object based on encodingIntervals array
-	// This ensures the web UI shows the correct GOP length range
-	if encodingIntervals, ok := options["encodingIntervals"].([]interface{}); ok && len(encodingIntervals) > 0 {
-		log.Printf("getResolutions: Found encoding intervals: %v", encodingIntervals)
+	// Add proper GovLengthRange object based on encodingIntervals array or from the camera response
+	var govLengthRangeFromCamera bool
 
-		// Find min and max values
-		var minGov, maxGov float64
-		if len(encodingIntervals) == 1 {
-			// If only one value, set it as both min and max
-			if num, ok := encodingIntervals[0].(float64); ok {
-				minGov, maxGov = num, num
-			} else if num, ok := encodingIntervals[0].(int); ok {
-				minGov, maxGov = float64(num), float64(num)
-			}
-		} else if len(encodingIntervals) > 1 {
-			// Multiple intervals, find min and max
-			minGov, maxGov = 999999, 0
-			for _, val := range encodingIntervals {
-				var numVal float64
-				if num, ok := val.(float64); ok {
-					numVal = num
-				} else if num, ok := val.(int); ok {
-					numVal = float64(num)
-				}
+	// First check if the Pi already provided a GovLengthRange
+	if govRange, ok := options["GovLengthRange"].(map[string]interface{}); ok {
+		log.Printf("getResolutions: Found GovLengthRange directly from camera: %v", govRange)
+		govLengthRangeFromCamera = true
 
-				if numVal > 0 {
-					if numVal < minGov {
-						minGov = numVal
-					}
-					if numVal > maxGov {
-						maxGov = numVal
-					}
-				}
-			}
+		// Make sure Min and Max are present and valid
+		min, hasMin := govRange["Min"]
+		max, hasMax := govRange["Max"]
+
+		if hasMin && hasMax {
+			log.Printf("getResolutions: Using camera-provided GovLengthRange: Min=%v, Max=%v", min, max)
+		} else {
+			log.Printf("getResolutions: Camera-provided GovLengthRange is incomplete, will calculate from encoding intervals")
+			govLengthRangeFromCamera = false
 		}
+	}
 
-		// Add GovLengthRange with min and max values
-		if minGov > 0 && maxGov > 0 {
+	// Only calculate our own range if not provided by camera
+	if !govLengthRangeFromCamera {
+		if encodingIntervals, ok := options["encodingIntervals"].([]interface{}); ok && len(encodingIntervals) > 0 {
+			log.Printf("getResolutions: Found encoding intervals: %v", encodingIntervals)
+
+			// Find min and max values
+			var minGov, maxGov float64
+			if len(encodingIntervals) == 1 {
+				// If only one value, set min to that value and use a reasonable max
+				if num, ok := encodingIntervals[0].(float64); ok {
+					minGov = num
+					// Use a reasonable multiple for the max, but don't hardcode 150
+					maxGov = num * 30
+					if maxGov > 150 {
+						maxGov = 150 // Cap at 150 for extremely large values
+					}
+				} else if num, ok := encodingIntervals[0].(int); ok {
+					minGov = float64(num)
+					maxGov = float64(num * 30)
+					if maxGov > 150 {
+						maxGov = 150 // Cap at 150 for extremely large values
+					}
+				} else {
+					log.Printf("getResolutions: WARNING - encodingIntervals[0] is of type %T, not float64 or int", encodingIntervals[0])
+					// Use default values as fallback
+					minGov = 1
+					maxGov = 30 // Use a more reasonable default
+				}
+			} else if len(encodingIntervals) > 1 {
+				// Multiple intervals, find min and max
+				minGov, maxGov = 999999, 0
+				for _, val := range encodingIntervals {
+					var numVal float64
+					if num, ok := val.(float64); ok {
+						numVal = num
+					} else if num, ok := val.(int); ok {
+						numVal = float64(num)
+					} else {
+						log.Printf("getResolutions: WARNING - encodingIntervals value is of type %T, not float64 or int", val)
+						continue
+					}
+
+					if numVal > 0 {
+						if numVal < minGov {
+							minGov = numVal
+						}
+						if numVal > maxGov {
+							maxGov = numVal
+						}
+					}
+				}
+
+				// If min and max are too close or the same, provide a more reasonable range
+				if maxGov <= minGov || (maxGov-minGov < 5) {
+					// Use the min as base and provide a reasonable range
+					maxGov = minGov * 10
+					if maxGov > 150 {
+						maxGov = 150 // Still cap at 150 for very large values
+					}
+				}
+			}
+
+			// If we couldn't determine a proper range, use default values to match main backend
+			if minGov <= 0 || maxGov <= 0 || minGov >= maxGov {
+				log.Printf("getResolutions: Using default GOP range values instead of invalid range: min=%v, max=%v", minGov, maxGov)
+				minGov = 1
+				maxGov = 150 // Changed from 30 to 150 to match main backend
+			}
+
+			// Add GovLengthRange with min and max values
 			options["GovLengthRange"] = map[string]interface{}{
 				"Min": minGov,
 				"Max": maxGov,
 			}
-			log.Printf("getResolutions: Added GovLengthRange with Min=%v, Max=%v based on encoding intervals", minGov, maxGov)
+			log.Printf("getResolutions: Added calculated GovLengthRange with Min=%v, Max=%v", minGov, maxGov)
+		} else {
+			// If no encoding intervals found, add a default GOP length range to match main backend
+			options["GovLengthRange"] = map[string]interface{}{
+				"Min": 1,
+				"Max": 150, // Changed from 30 to 150 to match main backend
+			}
+			log.Printf("getResolutions: No encoding intervals found, added default GovLengthRange with Min=1, Max=150")
 		}
 	}
 
@@ -743,16 +802,6 @@ func isVLCRunning() bool {
 		// Command failed or no VLC process found
 		return false
 	}
-
-	// Check if the output contains evidence of VLC running
-	return strings.Contains(string(output), "vlc")
-}
-
-// Get the path to VLC executable based on OS
-func getVLCPath() (string, error) {
-	var vlcPath string
-	switch runtime.GOOS {
-	case "windows":
 		// Check common installation paths
 		possiblePaths := []string{
 			"C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",

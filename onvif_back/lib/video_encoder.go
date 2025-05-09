@@ -369,30 +369,30 @@ func SetH264Profile(c *Camera, configToken, profile string) (bool, error) {
 }
 
 // Add logging to ParseH264Options to debug empty resolutions
-func ParseH264Options(options interface{}) map[string]interface{} {
+func ParseH264OptionsFromInterface(options interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
 
 	// Check if we received any options
 	if options == nil {
-		fmt.Println("ParseH264Options: No options provided (nil)")
+		fmt.Println("ParseH264OptionsFromInterface: No options provided (nil)")
 		return result
 	}
 
 	// Log raw options for debugging
-	fmt.Printf("ParseH264Options: Raw options received: %+v\n", options)
+	fmt.Printf("ParseH264OptionsFromInterface: Raw options received: %+v\n", options)
 
 	// Try to extract the available resolutions
 	if videoOptions, ok := options.(map[string]interface{}); ok {
 		// Extract available resolutions if present
 		if resolutions, ok := videoOptions["ResolutionsAvailable"].([]interface{}); ok {
 			result["ResolutionsAvailable"] = resolutions
-			fmt.Printf("ParseH264Options: Found %d resolutions\n", len(resolutions))
+			fmt.Printf("ParseH264OptionsFromInterface: Found %d resolutions\n", len(resolutions))
 		} else {
-			fmt.Println("ParseH264Options: No ResolutionsAvailable found or invalid type")
+			fmt.Println("ParseH264OptionsFromInterface: No ResolutionsAvailable found or invalid type")
 			// For debugging: Try to find any resolution-like fields in the response
 			for k, v := range videoOptions {
 				if strings.Contains(strings.ToLower(k), "resolution") {
-					fmt.Printf("ParseH264Options: Found resolution-like field: %s = %+v\n", k, v)
+					fmt.Printf("ParseH264OptionsFromInterface: Found resolution-like field: %s = %+v\n", k, v)
 				}
 			}
 			result["ResolutionsAvailable"] = []interface{}{}
@@ -401,14 +401,14 @@ func ParseH264Options(options interface{}) map[string]interface{} {
 		// Extract frame rate range if present
 		if frameRateRange, ok := videoOptions["FrameRateRange"].(map[string]interface{}); ok {
 			result["FrameRateRange"] = frameRateRange
-			fmt.Printf("ParseH264Options: Found frame rate range: min=%v, max=%v\n",
+			fmt.Printf("ParseH264OptionsFromInterface: Found frame rate range: min=%v, max=%v\n",
 				frameRateRange["Min"], frameRateRange["Max"])
 		} else {
-			fmt.Println("ParseH264Options: No FrameRateRange found or invalid type")
+			fmt.Println("ParseH264OptionsFromInterface: No FrameRateRange found or invalid type")
 			// Check for other frame rate fields
 			for k, v := range videoOptions {
 				if strings.Contains(strings.ToLower(k), "frame") && strings.Contains(strings.ToLower(k), "rate") {
-					fmt.Printf("ParseH264Options: Found frame rate field: %s = %+v\n", k, v)
+					fmt.Printf("ParseH264OptionsFromInterface: Found frame rate field: %s = %+v\n", k, v)
 				}
 			}
 		}
@@ -420,7 +420,7 @@ func ParseH264Options(options interface{}) map[string]interface{} {
 		// Extract available H.264 profiles if present
 		if h264Profiles, ok := videoOptions["H264ProfilesSupported"].([]interface{}); ok {
 			result["H264ProfilesSupported"] = h264Profiles
-			fmt.Printf("ParseH264Options: Found %d H264 profiles\n", len(h264Profiles))
+			fmt.Printf("ParseH264OptionsFromInterface: Found %d H264 profiles\n", len(h264Profiles))
 		} else {
 			// Try alternative fields and format strings as needed
 			h264Profiles := extractH264Profiles(videoOptions)
@@ -460,10 +460,10 @@ func ParseH264Options(options interface{}) map[string]interface{} {
 
 		// Include error message if resolutions are empty but other data exists
 		if len(result["ResolutionsAvailable"].([]interface{})) == 0 && len(frameRates) > 0 {
-			fmt.Println("ParseH264Options: WARNING - Got frame rates but no resolutions!")
+			fmt.Println("ParseH264OptionsFromInterface: WARNING - Got frame rates but no resolutions!")
 
 			// Add common resolutions as fallback if the camera doesn't provide them
-			fmt.Println("ParseH264Options: Adding fallback resolutions")
+			fmt.Println("ParseH264OptionsFromInterface: Adding fallback resolutions")
 			fallbackResolutions := []map[string]interface{}{
 				{"Width": 1920, "Height": 1080},
 				{"Width": 1280, "Height": 720},
@@ -482,7 +482,7 @@ func ParseH264Options(options interface{}) map[string]interface{} {
 	}
 
 	// Log the final parsed result
-	fmt.Printf("ParseH264Options: Final result: %+v\n", result)
+	fmt.Printf("ParseH264OptionsFromInterface: Final result: %+v\n", result)
 
 	return result
 }

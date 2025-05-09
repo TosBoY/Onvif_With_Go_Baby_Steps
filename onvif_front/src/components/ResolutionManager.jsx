@@ -171,8 +171,16 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       await api.changeResolution(configData);
       setSuccess('Camera configuration updated successfully');
       
+      console.log("Configuration updated successfully, refreshing config display...");
       // Refresh camera info to show updated configuration
+      // Make sure we're calling the function with the right name
       refreshCameraInfo();
+      
+      // Add a slight delay and call refreshCameraInfo again to ensure update
+      setTimeout(() => {
+        console.log("Calling refresh again after timeout");
+        refreshCameraInfo();
+      }, 500);
       
       // If auto-launch VLC is checked, launch VLC
       if (autoLaunchVLC) {
@@ -248,13 +256,13 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
 
   // Helper function for getting GOP length min value
   const getGovLengthMin = () => {
-    // First try 'encodingIntervals' array for min value (from Pi component)
-    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
-      return Math.min(...options.encodingIntervals);
-    }
-    // Then try GovLengthRange (original format)
+    // First check if we have a GovLengthRange with Min (our new backend format)
     if (options.GovLengthRange && options.GovLengthRange.Min !== undefined) {
       return options.GovLengthRange.Min;
+    }
+    // Then try 'encodingIntervals' array for min value (from Pi component)
+    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
+      return Math.min(...options.encodingIntervals);
     }
     // Default fallback
     return 1;
@@ -262,13 +270,13 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
 
   // Helper function for getting GOP length max value
   const getGovLengthMax = () => {
-    // First try 'encodingIntervals' array for max value (from Pi component)
-    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
-      return Math.max(...options.encodingIntervals);
-    }
-    // Then try GovLengthRange (original format)
+    // First check if we have a GovLengthRange with Max (our new backend format)
     if (options.GovLengthRange && options.GovLengthRange.Max !== undefined) {
       return options.GovLengthRange.Max;
+    }
+    // Then try 'encodingIntervals' array for max value (from Pi component)
+    if (options.encodingIntervals && options.encodingIntervals.length > 0) {
+      return Math.max(...options.encodingIntervals);
     }
     // Default fallback
     return 60;

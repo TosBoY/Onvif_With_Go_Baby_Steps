@@ -28,6 +28,10 @@ type H264Options struct {
 	EncodingIntervals  []int             `json:"encodingIntervals"`
 	BitrateOptions     []int             `json:"bitrates"`
 	H264ProfileOptions []string          `json:"h264Profiles"`
+	GovLengthRange     struct {
+		Min int `json:"Min"`
+		Max int `json:"Max"`
+	} `json:"GovLengthRange"`
 }
 
 // VideoEncoderConfiguration represents a video encoder configuration
@@ -504,12 +508,15 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 
 		minGovLength := h264Options.GovLengthRange.Min
 		maxGovLength := h264Options.GovLengthRange.Max
-
 		// If we have no explicit GOP length range, use encoding interval range
 		if minGovLength == 0 && maxGovLength == 0 {
 			minGovLength = minInterval
 			maxGovLength = maxInterval
 		}
+
+		// Store the GovLengthRange in the options struct
+		options.GovLengthRange.Min = minGovLength
+		options.GovLengthRange.Max = maxGovLength
 
 		fmt.Printf("ParseH264Options: Encoding interval range: Min=%d, Max=%d\n", minInterval, maxInterval)
 		fmt.Printf("ParseH264Options: GOP length range: Min=%d, Max=%d\n", minGovLength, maxGovLength)
@@ -754,7 +761,6 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 	if len(options.H264ProfileOptions) == 0 {
 		options.H264ProfileOptions = []string{"Baseline", "Main", "High"}
 	}
-
 	// If we have no resolutions, use defaults
 	if len(options.ResolutionOptions) == 0 {
 		options.ResolutionOptions = []VideoResolution{
@@ -763,6 +769,12 @@ func ParseH264Options(responseBody interface{}) *H264Options {
 			{Width: 640, Height: 480},
 			{Width: 320, Height: 240},
 		}
+	}
+
+	// If GovLengthRange was not set, use defaults
+	if options.GovLengthRange.Min == 0 && options.GovLengthRange.Max == 0 {
+		options.GovLengthRange.Min = 1
+		options.GovLengthRange.Max = 60
 	}
 
 	return options

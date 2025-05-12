@@ -17,13 +17,63 @@ import {
 } from '@mui/material';
 import api from '../services/api';
 
-// Default resolutions to use as fallback when API returns empty array
-const DEFAULT_RESOLUTIONS = [
-  { Width: 1920, Height: 1080 },
-  { Width: 1280, Height: 720 },
-  { Width: 640, Height: 480 },
-  { Width: 320, Height: 240 }
+// Standard resolution definitions
+const STANDARD_RESOLUTIONS = [
+  { label: '480p', width: 640, height: 480 },    // SD
+  { label: '720p', width: 1280, height: 720 },   // HD
+  { label: '1080p', width: 1920, height: 1080 }, // Full HD
+  { label: '2K', width: 2048, height: 1080 },    // 2K DCI
+  { label: '1440p', width: 2560, height: 1440 }, // QHD
+  { label: '4K', width: 3840, height: 2160 },    // 4K UHD
+  { label: '5K', width: 5120, height: 2880 },    // 5K
+  { label: '8K', width: 7680, height: 4320 },    // 8K UHD
 ];
+
+// Function to find closest standard resolution
+const findClosestResolution = (availableResolutions) => {
+  const result = [];
+  const seen = new Set(); // To prevent duplicate resolutions
+
+  for (const stdRes of STANDARD_RESOLUTIONS) {
+    let closestRes = null;
+    let minDiff = Number.MAX_SAFE_INTEGER;
+    let bestAspectRatioDiff = Number.MAX_SAFE_INTEGER;
+
+    for (const res of availableResolutions) {
+      const targetArea = stdRes.width * stdRes.height;
+      const resArea = res.Width * res.Height;
+      const areaDiff = Math.abs(targetArea - resArea);
+      
+      // Calculate aspect ratio difference
+      const targetRatio = stdRes.width / stdRes.height;
+      const resRatio = res.Width / res.Height;
+      const aspectRatioDiff = Math.abs(targetRatio - resRatio);
+
+      // Only consider if aspect ratio is similar enough (within 10%)
+      if (aspectRatioDiff < 0.1 && (areaDiff < minDiff || 
+         (areaDiff === minDiff && aspectRatioDiff < bestAspectRatioDiff))) {
+        minDiff = areaDiff;
+        bestAspectRatioDiff = aspectRatioDiff;
+        closestRes = res;
+      }
+    }
+
+    if (closestRes) {
+      const key = `${closestRes.Width}x${closestRes.Height}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          ...closestRes,
+          label: stdRes.label,
+          originalWidth: stdRes.width,
+          originalHeight: stdRes.height
+        });
+      }
+    }
+  }
+
+  return result;
+};
 
 const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selectedCameras }) => {
   const [options, setOptions] = useState(null);
@@ -50,62 +100,47 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
         const data = await api.getResolutions(configToken, profileToken);
         console.log("Resolution data received:", data);
         
-        // Check if we need to use fallback resolutions
         if (!data.ResolutionsAvailable || data.ResolutionsAvailable.length === 0) {
-          console.log("No resolutions available from API, using fallbacks");
-          data.ResolutionsAvailable = DEFAULT_RESOLUTIONS;
-          setUsingFallbackResolutions(true);
+          console.log("No resolutions available from API, using standard resolutions");
+          // Convert standard resolutions to match API format
+          data.ResolutionsAvailable = STANDARD_RESOLUTIONS.map(res => ({
+            Width: res.width,
+            Height: res.height,
+            label: res.label
+          }));
         } else {
-          setUsingFallbackResolutions(false);
+          // Find closest matches to standard resolutions
+          data.ResolutionsAvailable = findClosestResolution(data.ResolutionsAvailable);
         }
         
         setOptions(data);
         
-        // Set default values when options are loaded with proper null checks
-        if (data && data.ResolutionsAvailable && data.ResolutionsAvailable.length > 0) {
-          const defaultIndex = 0;
+        // Set default values
+        if (data.ResolutionsAvailable && data.ResolutionsAvailable.length > 0) {
+          // Try to find 1080p as default, otherwise use first available
+          const defaultIndex = data.ResolutionsAvailable.findIndex(res => 
+            res.label === '1080p' || (res.Width === 1920 && res.Height === 1080)
+          ) || 0;
+          
           const defaultRes = data.ResolutionsAvailable[defaultIndex];
           
-          // Set a default frame rate based on available options
-          let defaultFrameRate = 1;
+          // Get default frame rate
+          let defaultFrameRate = 30; // Common default
           if (data.frameRates && data.frameRates.length > 0) {
-            // Try to select a middle frame rate value from the available options
-            // or the first one if there's only one option
             const midIndex = Math.floor(data.frameRates.length / 2);
             defaultFrameRate = data.frameRates[midIndex];
           } else if (data.FrameRateRange && data.FrameRateRange.Min) {
             defaultFrameRate = data.FrameRateRange.Min;
           }
 
-          // Get a default GOP length value
-          let defaultGovLength = 1;
-          if (data.encodingIntervals && data.encodingIntervals.length > 0) {
-            // Try to select a middle encoding interval value as default
-            const midIndex = Math.floor(data.encodingIntervals.length / 2);
-            defaultGovLength = data.encodingIntervals[midIndex];
-          } else if (data.GovLengthRange && data.GovLengthRange.Min) {
-            defaultGovLength = data.GovLengthRange.Min;
-          }
-          
           setFormData({
             resolution: defaultIndex,
             frameRate: defaultFrameRate,
-            bitRate: 4096, // Default bitrate
-            govLength: defaultGovLength,
-            h264Profile: data.h264Profiles && data.h264Profiles.length > 0 ? data.h264Profiles[0] :
-                         (data.H264ProfilesSupported && data.H264ProfilesSupported.length > 0 ? data.H264ProfilesSupported[0] : 'Main'),
+            bitRate: 4096,
+            govLength: data.GovLengthRange?.Min || 1,
+            h264Profile: data.h264Profiles?.[0] || data.H264ProfilesSupported?.[0] || 'Main',
             width: defaultRes.Width,
             height: defaultRes.Height
-          });
-        } else {
-          // No resolution data available, set default values
-          setError('No resolution options available for this profile/config combination');
-          setFormData({
-            resolution: '',
-            frameRate: 1,
-            bitRate: 4096,
-            govLength: 1,
-            h264Profile: 'Main'
           });
         }
         
@@ -122,8 +157,7 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
 
   const handleResolutionChange = (event) => {
     const selectedResIndex = event.target.value;
-    if (options && options.ResolutionsAvailable && selectedResIndex !== undefined && 
-        selectedResIndex !== null && options.ResolutionsAvailable[selectedResIndex]) {
+    if (options?.ResolutionsAvailable?.[selectedResIndex]) {
       const selectedRes = options.ResolutionsAvailable[selectedResIndex];
       
       setFormData(prevData => ({
@@ -361,16 +395,21 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
           >
             {options.ResolutionsAvailable && options.ResolutionsAvailable.map((res, index) => (
               <MenuItem key={index} value={index}>
-                {res.Width} x {res.Height}
+                {res.label || `${res.Width}x${res.Height}`} 
+                {res.label && (res.Width !== res.originalWidth || res.Height !== res.originalHeight) && 
+                  ` (closest match: ${res.Width}x${res.Height})`}
               </MenuItem>
             ))}
           </Select>
         </FormControl>
 
-        {/* Selected resolution preview */}
+        {/* Selected resolution preview with standard label */}
         {formData.width && formData.height && (
           <Typography variant="subtitle2" sx={{ mb: 2, color: 'text.secondary' }}>
-            Selected: {formData.width} x {formData.height}
+            Selected: {
+              options.ResolutionsAvailable[formData.resolution]?.label || 
+              `${formData.width}x${formData.height}`
+            }
           </Typography>
         )}
 

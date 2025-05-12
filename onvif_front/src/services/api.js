@@ -22,10 +22,9 @@ const api = {
       throw error;
     }
   },
-
   changeResolution: async (configData) => {
     try {
-      // Make sure we include configName if available to preserve the original name
+      // configData now includes cameraId and other configuration details
       const response = await axios.post('/api/camera/change-resolution', configData);
       return response.data;
     } catch (error) {

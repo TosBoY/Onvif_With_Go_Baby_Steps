@@ -1,0 +1,25 @@
+{
+    "cameras": [
+        {
+            "id": "1",
+            "ip": "192.168.1.12",
+            "username": "admin",
+            "password": "admin123",
+            "isFake": false
+        },
+        {
+            "id": "2",
+            "ip": "192.168.1.13",
+            "username": "admin",
+            "password": "admin123",
+            "isFake": true
+        },
+        {
+            "id": "3",
+            "ip": "192.168.1.14",
+            "username": "admin",
+            "password": "admin123",
+            "isFake": true
+        }
+    ]
+}

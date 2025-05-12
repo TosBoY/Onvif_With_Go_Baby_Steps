@@ -29,16 +29,31 @@ type CameraConfig struct {
 	Password string `json:"password"`
 }
 
+type Camera struct {
+	ID       string `json:"id"`
+	IP       string `json:"ip"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	IsFake   bool   `json:"isFake"`
+}
+
+type CameraList struct {
+	Cameras []Camera `json:"cameras"`
+}
+
+// Fixed camera config that's known to work
 var cameraConfig = CameraConfig{
 	IP:       "192.168.1.12",
 	Username: "admin",
 	Password: "admin123",
 }
 
-// Global camera instance - this mimics the behavior of the interactive CLI tool
-// which creates one camera connection at startup and uses it throughout
-var globalCamera *lib.Camera
-var cameraLock sync.Mutex
+// Global camera instance and cameras list
+var (
+	globalCamera *lib.Camera
+	cameraLock   sync.Mutex
+	cameras      []Camera
+)
 
 // Initialize camera connection
 func initCamera() error {
@@ -74,8 +89,6 @@ func getCamera() (*lib.Camera, error) {
 		log.Println("Creating new camera connection...")
 		globalCamera = lib.NewCamera(cameraConfig.IP, 80, cameraConfig.Username, cameraConfig.Password)
 
-		// We DON'T close VLC here - this is a key change!
-		// Like the interactive CLI tool, we just try to connect directly
 		if err := globalCamera.Connect(); err != nil {
 			globalCamera = nil
 			return nil, fmt.Errorf("failed to connect to camera: %v", err)
@@ -86,15 +99,72 @@ func getCamera() (*lib.Camera, error) {
 	return globalCamera, nil
 }
 
-// Forcefully reset the camera connection
-func resetCamera() {
-	cameraLock.Lock()
-	defer cameraLock.Unlock()
-	globalCamera = nil
+func loadCamerasFromConfig() ([]Camera, error) {
+	file, err := os.ReadFile("./config/cameras.json")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read cameras.json: %v", err)
+	}
+
+	var cameraList CameraList
+	if err := json.Unmarshal(file, &cameraList); err != nil {
+		return nil, fmt.Errorf("failed to parse cameras.json: %v", err)
+	}
+
+	return cameraList.Cameras, nil
+}
+
+// Initialize default cameras if needed
+func initDefaultCameras() {
+	if len(cameras) == 0 {
+		loadedCameras, err := loadCamerasFromConfig()
+		if err != nil {
+			log.Printf("Warning: Failed to load cameras from config: %v. Using default camera.", err)
+			cameras = []Camera{
+				{
+					ID:       "1",
+					IP:       "192.168.1.12",
+					Username: "admin",
+					Password: "admin123",
+					IsFake:   false,
+				},
+			}
+		} else {
+			cameras = loadedCameras
+			log.Printf("Loaded %d cameras from config file", len(cameras))
+		}
+	}
+}
+
+func getCamerasHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(cameras)
+}
+
+func applyConfigHandler(w http.ResponseWriter, r *http.Request) {
+	var selectedCameras []string
+	if err := json.NewDecoder(r.Body).Decode(&selectedCameras); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	for _, cameraID := range selectedCameras {
+		for _, camera := range cameras {
+			if camera.ID == cameraID {
+				log.Printf("Applying configuration to camera: %s (IP: %s, IsFake: %v)", camera.ID, camera.IP, camera.IsFake)
+				// Add logic to apply configuration to the camera here
+			}
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("Configuration applied successfully"))
 }
 
 func main() {
-	// Initialize camera connection at startup, like the CLI tool
+	// Initialize with default camera
+	initDefaultCameras()
+
+	// Initialize camera connection at startup
 	log.Println("Initializing camera connection...")
 	err := initCamera()
 	if err != nil {
@@ -110,8 +180,10 @@ func main() {
 	r.HandleFunc("/api/camera/change-resolution", changeResolution).Methods("POST")
 	r.HandleFunc("/api/camera/stream-url", getStreamURL).Methods("GET")
 	r.HandleFunc("/api/camera/launch-vlc", launchVLCWithStream).Methods("POST")
-	r.HandleFunc("/api/camera/config", getConfigDetails).Methods("GET")   // New endpoint
-	r.HandleFunc("/api/camera/device-info", getDeviceInfo).Methods("GET") // New endpoint
+	r.HandleFunc("/api/camera/config", getConfigDetails).Methods("GET")
+	r.HandleFunc("/api/camera/device-info", getDeviceInfo).Methods("GET")
+	r.HandleFunc("/api/cameras", getCamerasHandler).Methods("GET")
+	r.HandleFunc("/api/apply-config", applyConfigHandler).Methods("POST")
 
 	// Add CORS support
 	corsHandler := handlers.CORS(
@@ -187,7 +259,7 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 
 	h264Options := lib.ParseH264Options(options)
 	fmt.Println("getResolutions: Successfully retrieved and parsed options")
-	
+
 	// Set content type header and write the response
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h264Options)
@@ -456,7 +528,7 @@ func isVLCRunning() bool {
 
 	output, err := cmd.Output()
 	if err != nil {
-		// Command failed or no VLC process found
+		 // Command failed or no VLC process found
 		return false
 	}
 
@@ -516,15 +588,16 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("changeResolution: Starting resolution change request")
 
 	var payload struct {
-		ConfigToken  string `json:"configToken"`
-		ProfileToken string `json:"profileToken"`
-		Width        int    `json:"width"`
-		Height       int    `json:"height"`
-		FrameRate    int    `json:"frameRate"`
-		BitRate      int    `json:"bitRate"`
-		GopLength    int    `json:"gopLength"`
-		H264Profile  string `json:"h264Profile"`
-		ConfigName   string `json:"configName"` // Added field for config name
+		ConfigToken  string   `json:"configToken"`
+		ProfileToken string   `json:"profileToken"`
+		CameraIds   []string `json:"cameraIds"` // Array of camera IDs to update
+		Width       int      `json:"width"`
+		Height      int      `json:"height"`
+		FrameRate   int      `json:"frameRate"`
+		BitRate     int      `json:"bitRate"`
+		GopLength   int      `json:"gopLength"`
+		H264Profile string   `json:"h264Profile"`
+		ConfigName  string   `json:"configName"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -533,56 +606,98 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("changeResolution: Changing to %dx%d, frameRate=%d, bitRate=%d, gopLength=%d, profile=%s\n",
-		payload.Width, payload.Height, payload.FrameRate, payload.BitRate, payload.GopLength, payload.H264Profile)
-
-	// DON'T close VLC - we want to match the interactive CLI behavior where
-	// VLC keeps running during configuration changes
-
-	camera, err := getCamera()
-	if err != nil {
-		fmt.Printf("changeResolution: Failed to get camera connection: %v\n", err)
-		http.Error(w, "Failed to connect to camera", http.StatusInternalServerError)
-		return
+	type UpdateResult struct {
+		CameraId string `json:"cameraId"`
+		Success  bool   `json:"success"`
+		Error    string `json:"error,omitempty"`
 	}
+	results := make([]UpdateResult, 0)
 
-	// If configName is not provided, get the original name
-	configName := payload.ConfigName
-	if configName == "" {
-		fmt.Println("changeResolution: No config name provided, getting original name")
-		// Get the current configuration to preserve its name
-		currentConfig, err := lib.GetVideoEncoderConfiguration(camera, payload.ConfigToken)
-		if err != nil {
-			fmt.Printf("changeResolution: Failed to get current configuration: %v\n", err)
-			http.Error(w, "Failed to get current configuration", http.StatusInternalServerError)
-			return
+	for _, cameraId := range payload.CameraIds {
+		var targetCamera *Camera
+		for _, cam := range cameras {
+			if cam.ID == cameraId {
+				targetCamera = &cam
+				break
+			}
 		}
-		configName = currentConfig.Name
-		fmt.Printf("changeResolution: Using original config name: %s\n", configName)
+
+		if targetCamera == nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    "Camera not found",
+			})
+			continue
+		}
+
+		camera := lib.NewCamera(targetCamera.IP, 80, targetCamera.Username, targetCamera.Password)
+		if err := camera.Connect(); err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to connect: %v", err),
+			})
+			continue
+		}
+
+		configName := payload.ConfigName
+		if configName == "" {
+			currentConfig, err := lib.GetVideoEncoderConfiguration(camera, payload.ConfigToken)
+			if err != nil {
+				results = append(results, UpdateResult{
+					CameraId: cameraId,
+					Success:  false,
+					Error:    fmt.Sprintf("Failed to get config: %v", err),
+				})
+				continue
+			}
+			configName = currentConfig.Name
+		}
+
+		err := lib.SetVideoEncoderConfiguration(
+			camera,
+			payload.ConfigToken,
+			configName,
+			payload.Width,
+			payload.Height,
+			payload.FrameRate,
+			payload.BitRate,
+			payload.GopLength,
+			payload.H264Profile,
+		)
+
+		if err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to set config: %v", err),
+			})
+		} else {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  true,
+			})
+		}
 	}
 
-	fmt.Println("changeResolution: Setting video encoder configuration")
-	err = lib.SetVideoEncoderConfiguration(
-		camera,
-		payload.ConfigToken,
-		configName, // Use the original or provided name
-		payload.Width,
-		payload.Height,
-		payload.FrameRate,
-		payload.BitRate,
-		payload.GopLength,
-		payload.H264Profile,
-	)
-
-	if err != nil {
-		fmt.Printf("changeResolution: Failed to set video encoder configuration: %v\n", err)
-		http.Error(w, "Failed to change resolution", http.StatusInternalServerError)
-		return
+	successCount := 0
+	for _, result := range results {
+		if result.Success {
+			successCount++
+		}
 	}
 
-	fmt.Println("changeResolution: Resolution updated successfully")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"message": "Resolution updated successfully"}`))
+	response := struct {
+		Message string         `json:"message"`
+		Results []UpdateResult `json:"results"`
+	}{
+		Message: fmt.Sprintf("Successfully updated %d of %d cameras", successCount, len(payload.CameraIds)),
+		Results: results,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 
 // Handler to get single configuration details

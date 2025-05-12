@@ -787,7 +787,6 @@ func SetVideoEncoderConfiguration(
 	width, height int,
 	frameRate, bitRate, govLength int,
 	h264Profile string) error {
-
 	// First get the current configuration to preserve settings we're not changing
 	config, err := GetVideoEncoderConfiguration(camera, token)
 	if err != nil {
@@ -804,7 +803,7 @@ func SetVideoEncoderConfiguration(
     <trt:SetVideoEncoderConfiguration>
       <trt:Configuration token="` + token + `">
         <tt:Name>` + name + `</tt:Name>
-        <tt:UseCount>1</tt:UseCount>
+        <tt:UseCount>` + fmt.Sprintf("%d", config.UseCount) + `</tt:UseCount>
         <tt:Encoding>H264</tt:Encoding>
         <tt:Resolution>
           <tt:Width>` + fmt.Sprintf("%d", width) + `</tt:Width>
@@ -813,14 +812,23 @@ func SetVideoEncoderConfiguration(
         <tt:Quality>` + fmt.Sprintf("%.1f", config.Quality) + `</tt:Quality>
         <tt:RateControl>
           <tt:FrameRateLimit>` + fmt.Sprintf("%d", frameRate) + `</tt:FrameRateLimit>
-          <tt:EncodingInterval>` + fmt.Sprintf("%d", govLength) + `</tt:EncodingInterval>
+          <tt:EncodingInterval>` + fmt.Sprintf("%d", config.GovLength) + `</tt:EncodingInterval>
           <tt:BitrateLimit>` + fmt.Sprintf("%d", bitRate) + `</tt:BitrateLimit>
         </tt:RateControl>
         <tt:H264>
           <tt:GovLength>` + fmt.Sprintf("%d", govLength) + `</tt:GovLength>
           <tt:H264Profile>` + h264Profile + `</tt:H264Profile>
         </tt:H264>
-        <tt:SessionTimeout>PT10S</tt:SessionTimeout>
+        <tt:MulticastConfiguration>
+          <tt:Address>
+            <tt:Type>IPv4</tt:Type>
+            <tt:IPv4Address>` + config.Multicast.Address + `</tt:IPv4Address>
+          </tt:Address>
+          <tt:Port>` + fmt.Sprintf("%d", config.Multicast.Port) + `</tt:Port>
+          <tt:TTL>` + fmt.Sprintf("%d", config.Multicast.TTL) + `</tt:TTL>
+          <tt:AutoStart>` + fmt.Sprintf("%t", config.Multicast.AutoStart) + `</tt:AutoStart>
+        </tt:MulticastConfiguration>
+        <tt:SessionTimeout>PT60S</tt:SessionTimeout>
       </trt:Configuration>
       <trt:ForcePersistence>true</trt:ForcePersistence>
     </trt:SetVideoEncoderConfiguration>

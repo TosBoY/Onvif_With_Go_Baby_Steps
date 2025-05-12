@@ -25,12 +25,13 @@ const DEFAULT_RESOLUTIONS = [
   { Width: 320, Height: 240 }
 ];
 
-const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => {
+const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selectedCameras }) => {
   const [options, setOptions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [autoLaunchVLC, setAutoLaunchVLC] = useState(false);
+  const [applyingConfig, setApplyingConfig] = useState(false);
   const [usingFallbackResolutions, setUsingFallbackResolutions] = useState(false);
   const [formData, setFormData] = useState({
     resolution: '',
@@ -143,6 +144,13 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
   };
 
   const handleSubmit = async () => {
+    // Validate camera selection first
+    if (selectedCameras.length === 0) {
+      setError('Please select at least one camera to apply the configuration');
+      return;
+    }
+
+    // Validate resolution selection
     if (formData.resolution === undefined || formData.resolution === null || formData.resolution === '') {
       setError('Please select a resolution');
       return;
@@ -153,9 +161,12 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       return;
     }
 
-    const selectedRes = options.ResolutionsAvailable[formData.resolution];
+    setApplyingConfig(true);
+    setError('');
+    setSuccess('');
 
-    const configData = {
+    const selectedRes = options.ResolutionsAvailable[formData.resolution];
+    const baseConfigData = {
       configToken,
       profileToken,
       width: selectedRes.Width,
@@ -166,37 +177,68 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
       h264Profile: formData.h264Profile || (h264Profiles.length > 0 ? h264Profiles[0] : 'Main')
     };
 
+    const successfulCameras = [];
+    const failedCameras = [];
+
     try {
-      // First, update the camera configuration
-      await api.changeResolution(configData);
-      setSuccess('Camera configuration updated successfully');
-      
-      console.log("Configuration updated successfully, refreshing config display...");
-      // Refresh camera info to show updated configuration
-      // Make sure we're calling the function with the right name
-      refreshCameraInfo();
-      
-      // Add a slight delay and call refreshCameraInfo again to ensure update
-      setTimeout(() => {
-        console.log("Calling refresh again after timeout");
-        refreshCameraInfo();
-      }, 500);
-      
-      // If auto-launch VLC is checked, launch VLC
-      if (autoLaunchVLC) {
+      // Update each selected camera in sequence
+      for (const cameraId of selectedCameras) {
         try {
-          setSuccess('Applying configuration and launching VLC...');
-          const vlcResponse = await api.launchVLC(profileToken);
-          console.log('VLC launch response:', vlcResponse);
-          setSuccess(`Configuration updated and ${vlcResponse.message.toLowerCase()}`);
-        } catch (vlcError) {
-          console.error('Error launching VLC:', vlcError);
-          setSuccess('Configuration updated but failed to launch VLC');
+          const cameraConfigData = {
+            ...baseConfigData,
+            cameraId
+          };
+          await api.changeResolution(cameraConfigData);
+          successfulCameras.push(cameraId);
+        } catch (err) {
+          console.error(`Failed to update camera ${cameraId}:`, err);
+          failedCameras.push(cameraId);
         }
       }
+
+      // Set appropriate success/error message based on results
+      if (successfulCameras.length > 0) {
+        const successMessage = successfulCameras.length === selectedCameras.length
+          ? `Configuration successfully applied to all ${successfulCameras.length} cameras`
+          : `Configuration applied to ${successfulCameras.length} out of ${selectedCameras.length} cameras`;
+        
+        setSuccess(successMessage);
+        
+        // Refresh displayed information
+        console.log("Configuration updated, refreshing display...");
+        refreshCameraInfo();
+        
+        // Additional refresh after delay to ensure update is captured
+        setTimeout(() => {
+          console.log("Calling refresh again after timeout");
+          refreshCameraInfo();
+        }, 500);
+        
+        // Handle VLC auto-launch if enabled and at least one camera was updated successfully
+        if (autoLaunchVLC) {
+          try {
+            const vlcResponse = await api.launchVLC(profileToken);
+            setSuccess(`${successMessage} and ${vlcResponse.message.toLowerCase()}`);
+          } catch (vlcError) {
+            console.error('Error launching VLC:', vlcError);
+            setSuccess(`${successMessage} but failed to launch VLC`);
+          }
+        }
+      }
+
+      // If any cameras failed, show error
+      if (failedCameras.length > 0) {
+        const errorMessage = successfulCameras.length === 0
+          ? 'Failed to apply configuration to all cameras'
+          : `Failed to apply configuration to ${failedCameras.length} camera(s)`;
+        setError(errorMessage);
+      }
+
     } catch (err) {
-      console.error('Error updating camera configuration:', err);
-      setError('Failed to update camera configuration');
+      console.error('Error updating camera configurations:', err);
+      setError('Failed to update camera configurations: ' + err.message);
+    } finally {
+      setApplyingConfig(false);
     }
   };
 
@@ -402,13 +444,28 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo }) => 
           sx={{ mb: 2 }}
         />
 
+        {/* Apply Configuration button with camera count */}
         <Button 
           variant="contained" 
           color="primary" 
           onClick={handleSubmit}
+          disabled={selectedCameras.length === 0 || applyingConfig}
           fullWidth
+          sx={{
+            backgroundColor: selectedCameras.length === 0 ? 'action.disabledBackground' : 'primary.main',
+            '&:disabled': {
+              backgroundColor: 'action.disabledBackground',
+              color: 'text.disabled'
+            }
+          }}
         >
-          Apply Configuration
+          {applyingConfig ? (
+            'Applying Configuration...'
+          ) : selectedCameras.length === 0 ? (
+            'Select Cameras to Apply Configuration'
+          ) : (
+            `Apply Configuration to ${selectedCameras.length} Camera${selectedCameras.length === 1 ? '' : 's'}`
+          )}
         </Button>
       </CardContent>
 

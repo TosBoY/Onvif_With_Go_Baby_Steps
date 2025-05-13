@@ -11,6 +11,16 @@ const api = {
     }
   },
 
+  addCamera: async (cameraData) => {
+    try {
+      const response = await axios.post('/api/cameras', cameraData);
+      return response.data;
+    } catch (error) {
+      console.error('Error adding camera:', error);
+      throw error;
+    }
+  },
+
   getResolutions: async (configToken, profileToken) => {
     try {
       const response = await axios.get('/api/camera/resolutions', {
@@ -75,7 +85,17 @@ const api = {
       console.error('Error fetching device information:', error);
       throw error;
     }
-  }
+  },
+
+  deleteCamera: async (cameraId) => {
+    try {
+      const response = await axios.delete(`/api/cameras/${cameraId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error deleting camera:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	lib "onvif_test2/lib"
+	"onvif_test2/lib/validator"
 
 	"github.com/use-go/onvif/device"
 
@@ -528,7 +529,7 @@ func isVLCRunning() bool {
 
 	output, err := cmd.Output()
 	if err != nil {
-		 // Command failed or no VLC process found
+		// Command failed or no VLC process found
 		return false
 	}
 
@@ -590,14 +591,14 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		ConfigToken  string   `json:"configToken"`
 		ProfileToken string   `json:"profileToken"`
-		CameraIds   []string `json:"cameraIds"` // Array of camera IDs to update
-		Width       int      `json:"width"`
-		Height      int      `json:"height"`
-		FrameRate   int      `json:"frameRate"`
-		BitRate     int      `json:"bitRate"`
-		GopLength   int      `json:"gopLength"`
-		H264Profile string   `json:"h264Profile"`
-		ConfigName  string   `json:"configName"`
+		CameraIds    []string `json:"cameraIds"`
+		Width        int      `json:"width"`
+		Height       int      `json:"height"`
+		FrameRate    int      `json:"frameRate"`
+		BitRate      int      `json:"bitRate"`
+		GopLength    int      `json:"gopLength"`
+		H264Profile  string   `json:"h264Profile"`
+		ConfigName   string   `json:"configName"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -607,11 +608,21 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type UpdateResult struct {
-		CameraId string `json:"cameraId"`
-		Success  bool   `json:"success"`
-		Error    string `json:"error,omitempty"`
+		CameraId         string                      `json:"cameraId"`
+		Success          bool                        `json:"success"`
+		Error            string                      `json:"error,omitempty"`
+		ValidationResult *validator.ValidationResult `json:"validationResult,omitempty"`
 	}
 	results := make([]UpdateResult, 0)
+
+	expectedConfig := validator.VideoConfig{
+		Width:       payload.Width,
+		Height:      payload.Height,
+		FrameRate:   payload.FrameRate,
+		BitRate:     payload.BitRate,
+		GopLength:   payload.GopLength,
+		H264Profile: payload.H264Profile,
+	}
 
 	for _, cameraId := range payload.CameraIds {
 		var targetCamera *Camera
@@ -621,12 +632,20 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-
 		if targetCamera == nil {
 			results = append(results, UpdateResult{
 				CameraId: cameraId,
 				Success:  false,
 				Error:    "Camera not found",
+			})
+			continue
+		}
+
+		if targetCamera.IsFake {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  true,
+				Error:    "Skipped: This is a simulated camera",
 			})
 			continue
 		}
@@ -655,6 +674,7 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 			configName = currentConfig.Name
 		}
 
+		// Apply the configuration changes		fmt.Printf("Applying config to camera %s (IP: %s)...\n", cameraId, targetCamera.IP)
 		err := lib.SetVideoEncoderConfiguration(
 			camera,
 			payload.ConfigToken,
@@ -668,23 +688,50 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 		)
 
 		if err != nil {
+			fmt.Printf("Failed to set config for camera %s: %v\n", cameraId, err)
 			results = append(results, UpdateResult{
-				CameraId: cameraId,
-				Success:  false,
-				Error:    fmt.Sprintf("Failed to set config: %v", err),
+				CameraId:         cameraId,
+				Success:          false,
+				Error:            fmt.Sprintf("Failed to set config: %v", err),
+				ValidationResult: nil,
 			})
-		} else {
-			results = append(results, UpdateResult{
-				CameraId: cameraId,
-				Success:  true,
-			})
+			continue
 		}
+
+		fmt.Printf("Successfully applied config to camera %s\n", cameraId)
+		// Get the stream URL for validation
+		streamURI, err := lib.GetStreamURI(camera, payload.ProfileToken)
+		if err != nil {
+			results = append(results, UpdateResult{
+				CameraId:         cameraId,
+				Success:          true, // Config was applied, but validation couldn't be performed
+				Error:            fmt.Sprintf("Config applied but couldn't validate: %v", err),
+				ValidationResult: nil,
+			})
+			continue
+		}
+		// Validate the configuration
+		var errStr string
+		validationResult, err := validator.ValidateVideoConfig(streamURI, expectedConfig)
+		if err != nil {
+			errStr = err.Error()
+		}
+		results = append(results, UpdateResult{
+			CameraId:         cameraId,
+			Success:          err == nil && validationResult.IsValid,
+			ValidationResult: validationResult,
+			Error:            errStr,
+		})
 	}
 
 	successCount := 0
+	validatedCount := 0
 	for _, result := range results {
 		if result.Success {
 			successCount++
+			if result.ValidationResult != nil && result.ValidationResult.IsValid {
+				validatedCount++
+			}
 		}
 	}
 
@@ -692,7 +739,12 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 		Message string         `json:"message"`
 		Results []UpdateResult `json:"results"`
 	}{
-		Message: fmt.Sprintf("Successfully updated %d of %d cameras", successCount, len(payload.CameraIds)),
+		Message: fmt.Sprintf(
+			"Updated %d of %d cameras (%d validated successfully)",
+			successCount,
+			len(payload.CameraIds),
+			validatedCount,
+		),
 		Results: results,
 	}
 

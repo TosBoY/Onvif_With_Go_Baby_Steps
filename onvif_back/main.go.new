@@ -1,0 +1,184 @@
+package main
+
+import (
+	"encoding/json"
+	"encoding/xml"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	lib "onvif_test2/lib"
+	"onvif_test2/lib/validator"
+
+	"github.com/use-go/onvif/device"
+
+	"github.com/gorilla/handlers"
+	"github.com/gorilla/mux"
+)
+
+// ... [Previous code unchanged until changeResolution function] ...
+
+// Handler to change resolution
+func changeResolution(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("changeResolution: Starting resolution change request")
+
+	var payload struct {
+		ConfigToken  string   `json:"configToken"`
+		ProfileToken string   `json:"profileToken"`
+		CameraIds    []string `json:"cameraIds"`
+		Width        int      `json:"width"`
+		Height       int      `json:"height"`
+		FrameRate    int      `json:"frameRate"`
+		BitRate      int      `json:"bitRate"`
+		GopLength    int      `json:"gopLength"`
+		H264Profile  string   `json:"h264Profile"`
+		ConfigName   string   `json:"configName"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		fmt.Printf("changeResolution: Failed to decode request payload: %v\n", err)
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	type UpdateResult struct {
+		CameraId         string                    `json:"cameraId"`
+		Success          bool                      `json:"success"`
+		Error           string                    `json:"error,omitempty"`
+		ValidationResult *validator.ValidationResult `json:"validationResult,omitempty"`
+	}
+	results := make([]UpdateResult, 0)
+
+	expectedConfig := validator.VideoConfig{
+		Width:       payload.Width,
+		Height:      payload.Height,
+		FrameRate:   payload.FrameRate,
+		BitRate:     payload.BitRate,
+		GopLength:   payload.GopLength,
+		H264Profile: payload.H264Profile,
+	}
+
+	for _, cameraId := range payload.CameraIds {
+		var targetCamera *Camera
+		for _, cam := range cameras {
+			if cam.ID == cameraId {
+				targetCamera = &cam
+				break
+			}
+		}
+
+		if targetCamera == nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    "Camera not found",
+			})
+			continue
+		}
+
+		camera := lib.NewCamera(targetCamera.IP, 80, targetCamera.Username, targetCamera.Password)
+		if err := camera.Connect(); err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to connect: %v", err),
+			})
+			continue
+		}
+
+		configName := payload.ConfigName
+		if configName == "" {
+			currentConfig, err := lib.GetVideoEncoderConfiguration(camera, payload.ConfigToken)
+			if err != nil {
+				results = append(results, UpdateResult{
+					CameraId: cameraId,
+					Success:  false,
+					Error:    fmt.Sprintf("Failed to get config: %v", err),
+				})
+				continue
+			}
+			configName = currentConfig.Name
+		}
+
+		// Apply the configuration changes
+		err := lib.SetVideoEncoderConfiguration(
+			camera,
+			payload.ConfigToken,
+			configName,
+			payload.Width,
+			payload.Height,
+			payload.FrameRate,
+			payload.BitRate,
+			payload.GopLength,
+			payload.H264Profile,
+		)
+
+		if err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to set config: %v", err),
+			})
+			continue
+		}
+
+		// Get the stream URL for validation
+		streamURI, err := lib.GetStreamURI(camera, payload.ProfileToken)
+		if err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  true, // Config was applied, but validation couldn't be performed
+				Error:    fmt.Sprintf("Config applied but couldn't validate: %v", err),
+			})
+			continue
+		}
+
+		// Validate the configuration
+		validationResult, err := validator.ValidateVideoConfig(streamURI, expectedConfig)
+		var errStr string
+		if err != nil {
+			errStr = err.Error()
+		}
+		results = append(results, UpdateResult{
+			CameraId:         cameraId,
+			Success:          err == nil && validationResult.IsValid,
+			ValidationResult: validationResult,
+			Error:           errStr,
+		})
+	}
+
+	successCount := 0
+	validatedCount := 0
+	for _, result := range results {
+		if result.Success {
+			successCount++
+			if result.ValidationResult != nil && result.ValidationResult.IsValid {
+				validatedCount++
+			}
+		}
+	}
+
+	response := struct {
+		Message string         `json:"message"`
+		Results []UpdateResult `json:"results"`
+	}{
+		Message: fmt.Sprintf(
+			"Updated %d of %d cameras (%d validated successfully)",
+			successCount,
+			len(payload.CameraIds),
+			validatedCount,
+		),
+		Results: results,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

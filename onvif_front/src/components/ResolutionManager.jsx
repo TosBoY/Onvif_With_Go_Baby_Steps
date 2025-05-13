@@ -16,6 +16,7 @@ import {
   Checkbox
 } from '@mui/material';
 import api from '../services/api';
+import ValidationResultDisplay from './ValidationResultDisplay';
 
 // Standard resolution definitions
 const STANDARD_RESOLUTIONS = [
@@ -83,6 +84,7 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
   const [autoLaunchVLC, setAutoLaunchVLC] = useState(false);
   const [applyingConfig, setApplyingConfig] = useState(false);
   const [usingFallbackResolutions, setUsingFallbackResolutions] = useState(false);
+  const [validationResults, setValidationResults] = useState([]);
   const [formData, setFormData] = useState({
     resolution: '',
     frameRate: '',
@@ -178,13 +180,11 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
   };
 
   const handleSubmit = async () => {
-    // Validate camera selection first
     if (selectedCameras.length === 0) {
       setError('Please select at least one camera to apply the configuration');
       return;
     }
 
-    // Validate resolution selection
     if (formData.resolution === undefined || formData.resolution === null || formData.resolution === '') {
       setError('Please select a resolution');
       return;
@@ -211,66 +211,78 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
       h264Profile: formData.h264Profile || (h264Profiles.length > 0 ? h264Profiles[0] : 'Main')
     };
 
-    const successfulCameras = [];
-    const failedCameras = [];
-
     try {
-      // Update each selected camera in sequence
-      for (const cameraId of selectedCameras) {
-        try {
-          const cameraConfigData = {
-            ...baseConfigData,
-            cameraId
-          };
-          await api.changeResolution(cameraConfigData);
-          successfulCameras.push(cameraId);
-        } catch (err) {
-          console.error(`Failed to update camera ${cameraId}:`, err);
-          failedCameras.push(cameraId);
-        }
+      const response = await api.changeResolution({ ...baseConfigData, cameraIds: selectedCameras });
+      console.log('Configuration update response:', response);
+
+      setValidationResults(response.results);
+
+      const successfulCameras = response.results.filter(r => r.success);
+      const validatedCameras = response.results.filter(r => r.success && r.validationResult?.isValid);
+      const failedCameras = response.results.filter(r => !r.success);
+      const invalidConfigs = response.results.filter(r => r.success && !r.validationResult?.isValid);
+
+      // Build detailed success/error message
+      let messages = [];
+      
+      if (validatedCameras.length > 0) {
+        messages.push(`${validatedCameras.length} camera(s) updated and validated successfully`);
+      }      if (invalidConfigs.length > 0) {
+        messages.push(`${invalidConfigs.length} camera(s) updated but didn't match expected configuration`);
+        
+        // Add details for invalid configurations
+        invalidConfigs.forEach(result => {
+          const validation = result.validationResult;
+          if (validation) { // Check if validation exists
+            messages.push(`Camera ${result.cameraId}:
+              Expected: ${validation.expectedWidth}x${validation.expectedHeight} @ ${validation.expectedFPS}fps
+              Actual: ${validation.actualWidth}x${validation.actualHeight} @ ${validation.actualFPS}fps`);
+          } else {
+            messages.push(`Camera ${result.cameraId}: Validation data not available`);
+          }
+        });
       }
 
-      // Set appropriate success/error message based on results
+      if (failedCameras.length > 0) {
+        messages.push(`Failed to update ${failedCameras.length} camera(s)`);
+        failedCameras.forEach(result => {
+          if (result.error) {
+            messages.push(`Camera ${result.cameraId}: ${result.error}`);
+          }
+        });
+      }
+
+      // Show success message if at least one camera was updated
       if (successfulCameras.length > 0) {
-        const successMessage = successfulCameras.length === selectedCameras.length
-          ? `Configuration successfully applied to all ${successfulCameras.length} cameras`
-          : `Configuration applied to ${successfulCameras.length} out of ${selectedCameras.length} cameras`;
-        
-        setSuccess(successMessage);
-        
-        // Refresh displayed information
+        setSuccess(messages.join('\n'));
         console.log("Configuration updated, refreshing display...");
         refreshCameraInfo();
-        
-        // Additional refresh after delay to ensure update is captured
+      
+        // Additional refresh after delay to ensure update
         setTimeout(() => {
           console.log("Calling refresh again after timeout");
           refreshCameraInfo();
         }, 500);
-        
-        // Handle VLC auto-launch if enabled and at least one camera was updated successfully
-        if (autoLaunchVLC) {
+      
+        // If auto-launch VLC is checked and at least one camera was validated
+        if (autoLaunchVLC && validatedCameras.length > 0) {
           try {
+            setSuccess('Applying configuration and launching VLC...');
             const vlcResponse = await api.launchVLC(profileToken);
-            setSuccess(`${successMessage} and ${vlcResponse.message.toLowerCase()}`);
+            console.log('VLC launch response:', vlcResponse);
+            setSuccess(`${messages.join('\n')}\n${vlcResponse.message.toLowerCase()}`);
           } catch (vlcError) {
             console.error('Error launching VLC:', vlcError);
-            setSuccess(`${successMessage} but failed to launch VLC`);
+            setSuccess(`${messages.join('\n')}\nFailed to launch VLC`);
           }
         }
+      } else {
+        setError('Failed to update any cameras');
       }
-
-      // If any cameras failed, show error
-      if (failedCameras.length > 0) {
-        const errorMessage = successfulCameras.length === 0
-          ? 'Failed to apply configuration to all cameras'
-          : `Failed to apply configuration to ${failedCameras.length} camera(s)`;
-        setError(errorMessage);
-      }
-
     } catch (err) {
       console.error('Error updating camera configurations:', err);
       setError('Failed to update camera configurations: ' + err.message);
+      setValidationResults([]);
     } finally {
       setApplyingConfig(false);
     }
@@ -506,6 +518,8 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
             `Apply Configuration to ${selectedCameras.length} Camera${selectedCameras.length === 1 ? '' : 's'}`
           )}
         </Button>
+
+        <ValidationResultDisplay results={validationResults} />
       </CardContent>
 
       <Snackbar open={!!error} autoHideDuration={6000} onClose={handleCloseAlert}>

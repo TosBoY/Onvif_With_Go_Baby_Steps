@@ -35,8 +35,8 @@ func GetFFProbePath() (string, error) {
 		return "", fmt.Errorf("failed to get current file path")
 	}
 
-	// Go up from lib/ to the project root and then into ffprobe/
-	projectRoot := filepath.Dir(filepath.Dir(thisFile)) // up from lib to project root
+	// Go up from lib/ to onvif_back/ and then up to main_onvif/
+	projectRoot := filepath.Dir(filepath.Dir(filepath.Dir(thisFile))) // up from lib through onvif_back to main_onvif
 	ffprobeDir := filepath.Join(projectRoot, "ffprobe")
 
 	var ffprobeName string

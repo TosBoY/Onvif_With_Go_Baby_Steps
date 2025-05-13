@@ -61,4 +61,4 @@ ehthumbs.db
 Thumbs.db
 
 # Inclusions
-!/onvif_back/ffprobe/ffprobe.exe
+!/ffprobe/ffprobe.exe

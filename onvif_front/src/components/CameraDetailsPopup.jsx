@@ -23,6 +23,7 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
   const [configDetails, setConfigDetails] = useState(null);
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (open && selectedProfile && !camera.isFake) {
@@ -45,17 +46,14 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
     setError('');
     try {
       if (!camera.isFake) {
-        // Fetch stream URL
         const url = await api.getStreamUrl(selectedProfile);
         setStreamUrl(url);
 
-        // Fetch config details
         if (selectedConfig) {
           const configData = await api.getSingleConfig(selectedConfig);
           setConfigDetails(configData);
         }
 
-        // Fetch device info
         const deviceData = await api.getDeviceInfo();
         setDeviceInfo(deviceData);
       }
@@ -80,16 +78,36 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
       setError('Failed to launch VLC');
     }
   };
+  const handleDelete = async () => {
+    try {
+      await api.deleteCamera(camera.id);
+      setShowDeleteConfirm(false);
+      onClose('deleted');
+    } catch (error) {
+      setError('Failed to delete camera. Please try again.');
+    }
+  };
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={() => onClose()} maxWidth="md" fullWidth>
         <DialogTitle>
           <Box display="flex" justifyContent="space-between" alignItems="center">
             <Typography variant="h6">Camera Details - {camera?.ip}</Typography>
-            <IconButton onClick={onClose}>
-              <CloseIcon />
-            </IconButton>
+            <Box>
+              <Button
+                variant="contained"
+                color="error"
+                size="small"
+                onClick={() => setShowDeleteConfirm(true)}
+                sx={{ mr: 1 }}
+              >
+                Delete Camera
+              </Button>
+              <IconButton onClick={() => onClose()} size="small">
+                <CloseIcon />
+              </IconButton>
+            </Box>
           </Box>
         </DialogTitle>
         <DialogContent>
@@ -129,7 +147,7 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
                     overflowX: 'auto',
                     whiteSpace: 'nowrap',
                     color: '#e6e6e6',
-                    pr: 4 // Space for copy button
+                    pr: 4
                   }}>
                     {streamUrl}
                   </Box>
@@ -175,7 +193,8 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
                 <Box mb={4}>
                   <Typography variant="h6" color="primary" gutterBottom>
                     Current Configuration
-                  </Typography>                  <Typography variant="body2">
+                  </Typography>
+                  <Typography variant="body2">
                     Resolution: {configDetails.Width || configDetails.width || 'N/A'} x {configDetails.Height || configDetails.height || 'N/A'}
                   </Typography>
                   <Typography variant="body2">
@@ -194,48 +213,67 @@ const CameraDetailsPopup = ({ open, onClose, camera, selectedProfile, selectedCo
               )}
 
               {/* Device Info Section */}
-              {!camera.isFake && deviceInfo && (
-                <Box>
-                  <Typography variant="h6" color="primary" gutterBottom>
-                    Device Information
-                  </Typography>
-                  <Typography variant="body2">
-                    Manufacturer: {deviceInfo.manufacturer}
-                  </Typography>
-                  <Typography variant="body2">
-                    Model: {deviceInfo.model}
-                  </Typography>
-                  <Typography variant="body2">
-                    Firmware Version: {deviceInfo.firmwareVersion}
-                  </Typography>
-                  <Typography variant="body2">
-                    Serial Number: {deviceInfo.serialNumber}
-                  </Typography>
-                  <Typography variant="body2">
-                    Hardware ID: {deviceInfo.hardwareId}
-                  </Typography>
-                </Box>
-              )}
-              {camera.isFake && (
-                <Box>
-                  <Typography variant="h6" color="primary" gutterBottom>
-                    Simulated Device Information
-                  </Typography>
-                  <Typography variant="body2">
-                    IP Address: {camera.ip}
-                  </Typography>
-                  <Typography variant="body2">
-                    Type: Simulated Camera
-                  </Typography>
-                  <Typography variant="body2">
-                    Status: {camera.status || 'Active'}
-                  </Typography>
-                </Box>
-              )}
+              <Box>
+                <Typography variant="h6" color="primary" gutterBottom>
+                  Device Information
+                </Typography>
+                {!camera.isFake && deviceInfo ? (
+                  <>
+                    <Typography variant="body2">
+                      Manufacturer: {deviceInfo.manufacturer}
+                    </Typography>
+                    <Typography variant="body2">
+                      Model: {deviceInfo.model}
+                    </Typography>
+                    <Typography variant="body2">
+                      Firmware Version: {deviceInfo.firmwareVersion}
+                    </Typography>
+                    <Typography variant="body2">
+                      Serial Number: {deviceInfo.serialNumber}
+                    </Typography>
+                    <Typography variant="body2">
+                      Hardware ID: {deviceInfo.hardwareId}
+                    </Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="body2">
+                      IP Address: {camera.ip}
+                    </Typography>
+                    <Typography variant="body2">
+                      Type: Simulated Camera
+                    </Typography>
+                    <Typography variant="body2">
+                      Status: Active
+                    </Typography>
+                  </>
+                )}
+              </Box>
             </Box>
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this camera? This action cannot be undone.
+          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+            <Button onClick={() => setShowDeleteConfirm(false)}>Cancel</Button>
+            <Button variant="contained" color="error" onClick={handleDelete}>
+              Delete
+            </Button>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
       <Snackbar
         open={copySuccess}
         autoHideDuration={3000}

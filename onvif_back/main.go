@@ -161,6 +161,123 @@ func applyConfigHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Configuration applied successfully"))
 }
 
+func addCameraHandler(w http.ResponseWriter, r *http.Request) {
+	var newCamera Camera
+	if err := json.NewDecoder(r.Body).Decode(&newCamera); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	// Generate a unique ID for the camera
+	newCamera.ID = fmt.Sprintf("%d", len(cameras)+1)
+
+	// If it's not a fake camera, try to connect to verify credentials
+	if !newCamera.IsFake {
+		testCamera := lib.NewCamera(newCamera.IP, 80, newCamera.Username, newCamera.Password)
+		if err := testCamera.Connect(); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Load current cameras from the config file
+	file, err := os.ReadFile("./config/cameras.json")
+	if err != nil && !os.IsNotExist(err) {
+		http.Error(w, "Failed to read cameras configuration", http.StatusInternalServerError)
+		return
+	}
+
+	var cameraList CameraList
+	if len(file) > 0 {
+		if err := json.Unmarshal(file, &cameraList); err != nil {
+			http.Error(w, "Failed to parse cameras configuration", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Add the new camera to the list
+	cameraList.Cameras = append(cameraList.Cameras, newCamera)
+
+	// Save back to the config file
+	configFile, err := os.Create("./config/cameras.json")
+	if err != nil {
+		http.Error(w, "Failed to create camera configuration file", http.StatusInternalServerError)
+		return
+	}
+	defer configFile.Close()
+
+	encoder := json.NewEncoder(configFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(cameraList); err != nil {
+		http.Error(w, "Failed to save camera configuration", http.StatusInternalServerError)
+		return
+	}
+
+	// Add to current cameras list
+	cameras = append(cameras, newCamera)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(newCamera)
+}
+
+func deleteCameraHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cameraID := vars["id"]
+
+	// Read existing cameras
+	content, err := os.ReadFile("config/cameras.json")
+	if err != nil {
+		http.Error(w, "Failed to read camera configuration", http.StatusInternalServerError)
+		return
+	}
+
+	var cameraList CameraList
+	if err := json.Unmarshal(content, &cameraList); err != nil {
+		http.Error(w, "Failed to parse camera configuration", http.StatusInternalServerError)
+		return
+	}
+
+	// Find and remove the camera
+	var found bool
+	var updatedCameras []Camera
+	for _, cam := range cameraList.Cameras {
+		if cam.ID != cameraID {
+			updatedCameras = append(updatedCameras, cam)
+		} else {
+			found = true
+		}
+	}
+
+	if !found {
+		http.Error(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+	// Save updated camera list with proper formatting
+	cameraList.Cameras = updatedCameras
+
+	// Create a file with proper formatting
+	configFile, err := os.Create("config/cameras.json")
+	if err != nil {
+		http.Error(w, "Failed to create camera configuration file", http.StatusInternalServerError)
+		return
+	}
+	defer configFile.Close()
+
+	// Use encoder with indentation for pretty JSON
+	encoder := json.NewEncoder(configFile)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(cameraList); err != nil {
+		http.Error(w, "Failed to save camera configuration", http.StatusInternalServerError)
+		return
+	}
+
+	// Update the in-memory cameras list
+	cameras = updatedCameras
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Camera deleted successfully"})
+}
+
 func main() {
 	// Initialize with default camera
 	initDefaultCameras()
@@ -174,7 +291,6 @@ func main() {
 	}
 
 	r := mux.NewRouter()
-
 	// Define API routes
 	r.HandleFunc("/api/camera/info", getCameraInfo).Methods("GET")
 	r.HandleFunc("/api/camera/resolutions", getResolutions).Methods("GET")
@@ -184,12 +300,14 @@ func main() {
 	r.HandleFunc("/api/camera/config", getConfigDetails).Methods("GET")
 	r.HandleFunc("/api/camera/device-info", getDeviceInfo).Methods("GET")
 	r.HandleFunc("/api/cameras", getCamerasHandler).Methods("GET")
+	r.HandleFunc("/api/cameras", addCameraHandler).Methods("POST")
+	r.HandleFunc("/api/cameras/{id}", deleteCameraHandler).Methods("DELETE")
 	r.HandleFunc("/api/apply-config", applyConfigHandler).Methods("POST")
 
 	// Add CORS support
 	corsHandler := handlers.CORS(
 		handlers.AllowedOrigins([]string{"http://localhost:3000", "http://localhost:5173"}),
-		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
+		handlers.AllowedMethods([]string{"GET", "POST", "OPTIONS", "DELETE"}),
 		handlers.AllowedHeaders([]string{"Content-Type"}),
 	)(r)
 

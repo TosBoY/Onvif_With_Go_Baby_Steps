@@ -11,19 +11,22 @@ import {
   Button,
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
+import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import CameraDetailsPopup from './CameraDetailsPopup';
+import AddCameraDialog from './AddCameraDialog';
 
 const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras, onCameraSelectionChange }) => {
   const [cameras, setCameras] = useState([]);
   const [openPopup, setOpenPopup] = useState(false);
-  const [selectedCamera, setSelectedCamera] = useState(null);
+  const [openAddDialog, setOpenAddDialog] = useState(false);  const [selectedCamera, setSelectedCamera] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
     axios.get('/api/cameras')
       .then(response => setCameras(response.data))
       .catch(error => console.error('Error fetching cameras:', error));
-  }, []);
+  }, [refreshTrigger]);
 
   const handleCheckboxChange = (cameraId) => {
     const newSelection = selectedCameras.includes(cameraId)
@@ -39,16 +42,26 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras,
       onCameraSelectionChange(cameras.map(camera => camera.id));
     }
   };
-
   const handleInfoClick = (camera) => {
     setSelectedCamera(camera);
     setOpenPopup(true);
   };
 
+  const handlePopupClose = (result) => {
+    if (result === 'deleted') {
+      setRefreshTrigger(prev => prev + 1); // Trigger a refresh of the camera list
+      // Also update selected cameras list if needed
+      onCameraSelectionChange(prevSelected => 
+        prevSelected.filter(id => id !== selectedCamera.id)
+      );
+    }
+    setOpenPopup(false);
+  };
+
   return (
     <div>
       <Card variant="outlined" sx={{ mb: 3, border: '2px solid #555', boxShadow: 2 }}>
-        <CardContent>            
+        <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" color="primary" fontWeight="bold">
               Camera List
@@ -64,12 +77,11 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras,
           <FormGroup>
             {cameras.map(camera => (
               <Box 
-                key={camera.id} 
-                sx={{ 
+                key={camera.id}                sx={{ 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'space-between',
-                  mb: 1 
+                  mb: 1
                 }}
               >
                 <FormControlLabel
@@ -90,14 +102,38 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras,
                 </IconButton>
               </Box>
             ))}
+            <Box 
+              sx={{ 
+                display: 'flex', 
+                alignItems: 'center',
+                justifyContent: 'center',
+                mt: 2,
+                p: 1,
+                border: '1px dashed #999',
+                borderRadius: 1,
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: '#f5f5f5'
+                }
+              }}
+              onClick={() => setOpenAddDialog(true)}
+            >
+              <AddIcon sx={{ mr: 1, color: 'primary.main' }} />
+              <Typography color="primary">Add New Camera</Typography>
+            </Box>
           </FormGroup>
         </CardContent>
       </Card>
-
-      {selectedCamera && (
+      <AddCameraDialog
+        open={openAddDialog}
+        onClose={() => setOpenAddDialog(false)}
+        onAdd={(newCamera) => {
+          setCameras([...cameras, newCamera]);
+        }}
+      />      {selectedCamera && (
         <CameraDetailsPopup
           open={openPopup}
-          onClose={() => setOpenPopup(false)}
+          onClose={handlePopupClose}
           camera={selectedCamera}
           selectedProfile={selectedProfile}
           selectedConfig={selectedConfig}

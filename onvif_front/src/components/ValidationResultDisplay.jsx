@@ -36,7 +36,7 @@ const ValidationResultDisplay = ({ results }) => {
       {invalidConfigs.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Alert severity="warning" sx={{ mb: 1 }}>
-            {invalidConfigs.length} camera(s) have configuration mismatches
+            {invalidConfigs.length} camera(s) updated but settings don't match validation checks
           </Alert>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
@@ -81,7 +81,7 @@ const ValidationResultDisplay = ({ results }) => {
       {failedCameras.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Alert severity="error" sx={{ mb: 1 }}>
-            Failed to update {failedCameras.length} camera(s)
+            {failedCameras.length} camera(s) updated but validation checks failed
           </Alert>
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">

@@ -244,7 +244,7 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
       }
 
       if (failedCameras.length > 0) {
-        messages.push(`Failed to update ${failedCameras.length} camera(s)`);
+        messages.push(`Failed to update ${failedCameras.length} camera(s) because validation mismatched, but the camera is already updated.`);
         failedCameras.forEach(result => {
           if (result.error) {
             messages.push(`Camera ${result.cameraId}: ${result.error}`);
@@ -277,11 +277,11 @@ const ResolutionManager = ({ configToken, profileToken, refreshCameraInfo, selec
           }
         }
       } else {
-        setError('Failed to update any cameras');
+        setError('Camera settings were updated but validation checks failed for all cameras');
       }
     } catch (err) {
       console.error('Error updating camera configurations:', err);
-      setError('Failed to update camera configurations: ' + err.message);
+      setError('Error during camera configuration process: ' + err.message);
       setValidationResults([]);
     } finally {
       setApplyingConfig(false);

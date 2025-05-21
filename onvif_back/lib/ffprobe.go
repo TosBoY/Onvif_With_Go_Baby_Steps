@@ -143,6 +143,7 @@ func ValidateStreamConfig(streamURL string, expectedWidth, expectedHeight int, e
 		"-v", "quiet",
 		"-print_format", "json",
 		"-show_streams",
+		"-select_streams", "v:0", // Only select the video stream (index 0)
 		streamURL)
 
 	output, err := cmd.Output()

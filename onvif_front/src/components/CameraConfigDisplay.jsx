@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Card,
-  CardContent,
+  Box,
   Typography,
   FormGroup,
   FormControlLabel,
   Checkbox,
   IconButton,
-  Box,
   Button,
+  Paper,
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
 import AddIcon from '@mui/icons-material/Add';
@@ -16,10 +15,11 @@ import axios from 'axios';
 import CameraDetailsPopup from './CameraDetailsPopup';
 import AddCameraDialog from './AddCameraDialog';
 
-const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras, onCameraSelectionChange }) => {
+const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
   const [cameras, setCameras] = useState([]);
   const [openPopup, setOpenPopup] = useState(false);
-  const [openAddDialog, setOpenAddDialog] = useState(false);  const [selectedCamera, setSelectedCamera] = useState(null);
+  const [openAddDialog, setOpenAddDialog] = useState(false);
+  const [selectedCamera, setSelectedCamera] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
@@ -42,104 +42,98 @@ const CameraConfigDisplay = ({ selectedProfile, selectedConfig, selectedCameras,
       onCameraSelectionChange(cameras.map(camera => camera.id));
     }
   };
+
   const handleInfoClick = (camera) => {
     setSelectedCamera(camera);
     setOpenPopup(true);
   };
 
-  const handlePopupClose = (result) => {
-    if (result === 'deleted') {
-      setRefreshTrigger(prev => prev + 1); // Trigger a refresh of the camera list
-      // Also update selected cameras list if needed
-      onCameraSelectionChange(prevSelected => 
-        prevSelected.filter(id => id !== selectedCamera.id)
-      );
-    }
+  const handlePopupClose = () => {
     setOpenPopup(false);
+    setSelectedCamera(null);
+  };
+
+  const handleAddCamera = () => {
+    setOpenAddDialog(true);
+  };
+
+  const handleAddDialogClose = (added) => {
+    setOpenAddDialog(false);
+    if (added) {
+      setRefreshTrigger(prev => prev + 1);
+    }
   };
 
   return (
-    <div>
-      <Card variant="outlined" sx={{ mb: 3, border: '2px solid #555', boxShadow: 2 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" color="primary" fontWeight="bold">
-              Camera List
-            </Typography>
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={handleSelectDeselectAll}
-            >
-              {selectedCameras.length === cameras.length ? 'Deselect All' : 'Select All'}
-            </Button>
-          </Box>
-          <FormGroup>
-            {cameras.map(camera => (
-              <Box 
-                key={camera.id}                sx={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'space-between',
-                  mb: 1
-                }}
-              >
-                <FormControlLabel
-                  sx={{ flex: 1 }}
-                  control={
-                    <Checkbox
-                      checked={selectedCameras.includes(camera.id)}
-                      onChange={() => handleCheckboxChange(camera.id)}
-                    />
-                  }
-                  label={`${camera.ip} (Fake: ${camera.isFake ? 'Yes' : 'No'})`}
-                />
-                <IconButton
-                  size="small"
-                  onClick={() => handleInfoClick(camera)}
-                >
-                  <InfoIcon />
-                </IconButton>
-              </Box>
-            ))}
-            <Box 
-              sx={{ 
-                display: 'flex', 
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Button
+          variant="outlined"
+          onClick={handleSelectDeselectAll}
+          sx={{ mr: 1 }}
+        >
+          {selectedCameras.length === cameras.length ? 'Deselect All' : 'Select All'}
+        </Button>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={handleAddCamera}
+        >
+          Add Camera
+        </Button>
+      </Box>
+
+      <Paper variant="outlined" sx={{ p: 2 }}>
+        <FormGroup>
+          {cameras.map((camera) => (
+            <Box
+              key={camera.id}
+              sx={{
+                display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                mt: 2,
-                p: 1,
-                border: '1px dashed #999',
-                borderRadius: 1,
-                cursor: 'pointer',
-                '&:hover': {
-                  backgroundColor: '#f5f5f5'
-                }
+                justifyContent: 'space-between',
+                py: 0.5
               }}
-              onClick={() => setOpenAddDialog(true)}
             >
-              <AddIcon sx={{ mr: 1, color: 'primary.main' }} />
-              <Typography color="primary">Add New Camera</Typography>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={selectedCameras.includes(camera.id)}
+                    onChange={() => handleCheckboxChange(camera.id)}
+                  />
+                }
+                label={
+                  <Typography>
+                    {camera.isFake ? '(Simulated) ' : ''}
+                    Camera {camera.id} - {camera.ip}
+                  </Typography>
+                }
+              />
+              <IconButton
+                size="small"
+                onClick={() => handleInfoClick(camera)}
+                disabled={camera.isFake}
+              >
+                <InfoIcon />
+              </IconButton>
             </Box>
-          </FormGroup>
-        </CardContent>
-      </Card>
-      <AddCameraDialog
-        open={openAddDialog}
-        onClose={() => setOpenAddDialog(false)}
-        onAdd={(newCamera) => {
-          setCameras([...cameras, newCamera]);
-        }}
-      />      {selectedCamera && (
+          ))}
+        </FormGroup>
+      </Paper>
+
+      {selectedCamera && (
         <CameraDetailsPopup
           open={openPopup}
           onClose={handlePopupClose}
           camera={selectedCamera}
-          selectedProfile={selectedProfile}
-          selectedConfig={selectedConfig}
         />
       )}
-    </div>
+
+      <AddCameraDialog
+        open={openAddDialog}
+        onClose={handleAddDialogClose}
+      />
+    </Box>
   );
 };
 

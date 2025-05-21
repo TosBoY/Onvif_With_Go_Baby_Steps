@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
@@ -13,6 +14,43 @@ func ContainsFault(xmlData []byte) bool {
 	// Simple string check for fault element
 	return bytes.Contains(xmlData, []byte("<Fault>")) || bytes.Contains(xmlData, []byte("<fault>")) ||
 		bytes.Contains(xmlData, []byte("<soap:Fault>")) || bytes.Contains(xmlData, []byte("<s:Fault>"))
+}
+
+// extractFaultString extracts the fault string from a SOAP fault response
+func extractFaultString(body []byte) string {
+	// Parse the XML to get the fault details
+	var envelope struct {
+		XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
+		Body    struct {
+			Fault struct {
+				Code   string `xml:"Code>Value"`
+				Reason struct {
+					Text string `xml:"Text"`
+				} `xml:"Reason"`
+				Detail string `xml:"Detail"`
+			} `xml:"Fault"`
+		} `xml:"Body"`
+	}
+
+	if err := xml.Unmarshal(body, &envelope); err != nil {
+		// If we can't parse the XML, try a simple regex approach
+		re := regexp.MustCompile(`<faultstring.*?>(.*?)</faultstring>`)
+		if matches := re.FindSubmatch(body); len(matches) > 1 {
+			return string(matches[1])
+		}
+		return "unknown error (failed to parse fault response)"
+	}
+
+	if envelope.Body.Fault.Reason.Text != "" {
+		return envelope.Body.Fault.Reason.Text
+	}
+	if envelope.Body.Fault.Detail != "" {
+		return envelope.Body.Fault.Detail
+	}
+	if envelope.Body.Fault.Code != "" {
+		return envelope.Body.Fault.Code
+	}
+	return "unknown error (no fault details found)"
 }
 
 // PrintFormattedXML formats and prints XML data
@@ -73,15 +111,29 @@ func FormatXML(input []byte) (string, error) {
 
 // ParseH264Options parses the H264 options from the response
 func ParseH264Options(optionsResp *VideoEncoderConfigurationOptionsResponse) *H264Options {
+	fmt.Printf("ParseH264Options: Starting to parse response: %+v\n", optionsResp)
+
+	if optionsResp == nil {
+		fmt.Println("ParseH264Options: Received nil response")
+		return &H264Options{}
+	}
+
 	h264 := optionsResp.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+	fmt.Printf("ParseH264Options: H264 options data: %+v\n", h264)
 
 	// Extract resolutions
 	var resolutions []Resolution
-	for _, res := range h264.ResolutionsAvailable {
-		resolutions = append(resolutions, Resolution{
-			Width:  res.Width,
-			Height: res.Height,
-		})
+	if len(h264.ResolutionsAvailable) > 0 {
+		fmt.Printf("ParseH264Options: Found %d resolutions in XML\n", len(h264.ResolutionsAvailable))
+		for _, res := range h264.ResolutionsAvailable {
+			fmt.Printf("ParseH264Options: Adding resolution %dx%d\n", res.Width, res.Height)
+			resolutions = append(resolutions, Resolution{
+				Width:  res.Width,
+				Height: res.Height,
+			})
+		}
+	} else {
+		fmt.Println("ParseH264Options: No resolutions found in XML")
 	}
 
 	return &H264Options{

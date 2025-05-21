@@ -1,0 +1,107 @@
+import { useState } from 'react';
+import { 
+  Container, 
+  Typography, 
+  Paper, 
+  Grid,
+  ThemeProvider,
+  createTheme,
+} from '@mui/material';
+import ResolutionManager from './components/ResolutionManager';
+import CameraConfigDisplay from './components/CameraConfigDisplay';
+import './App.css';
+
+// Create a dark theme with less contrasting text
+const darkTheme = createTheme({
+  palette: {
+    mode: 'dark',
+    primary: {
+      main: '#90caf9', // A lighter blue for dark mode
+    },
+    secondary: {
+      main: '#ce93d8', // Purple
+    },
+    background: {
+      default: '#121212',
+      paper: '#1e1e1e',
+    },
+    text: {
+      primary: 'rgba(255, 255, 255, 0.85)', // Slightly transparent white
+      secondary: 'rgba(176, 190, 197, 0.8)', // Slightly transparent gray-blue
+    },
+  },
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+        },
+      },
+    },
+    MuiPaper: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8,
+        },
+      },
+    },
+  },
+});
+
+const App = () => {
+  const [selectedCameras, setSelectedCameras] = useState([]);
+
+  const handleCameraSelectionChange = (cameras) => {
+    setSelectedCameras(cameras);
+  };
+
+  return (
+    <ThemeProvider theme={darkTheme}>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          sx={{ 
+            mb: 3, 
+            textAlign: 'center',
+            color: 'rgba(144, 202, 249, 0.9)',
+            fontWeight: 'bold',
+            backgroundColor: 'rgba(144, 202, 249, 0.08)',
+            padding: '12px',
+            borderRadius: '8px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
+          }}
+        >
+          ONVIF Camera Control
+        </Typography>
+
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={7}>
+            <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h5" component="h2" sx={{ mb: 2, color: 'rgba(144, 202, 249, 0.9)' }}>
+                Camera Configuration
+              </Typography>
+              
+              <ResolutionManager 
+                selectedCameras={selectedCameras}
+              />
+            </Paper>
+          </Grid>
+          <Grid item xs={12} md={5}>
+            <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
+              <Typography variant="h5" component="h2" sx={{ mb: 2, color: 'rgba(144, 202, 249, 0.9)' }}>
+                Camera List
+              </Typography>
+              <CameraConfigDisplay 
+                selectedCameras={selectedCameras}
+                onCameraSelectionChange={handleCameraSelectionChange}
+              />
+            </Paper>
+          </Grid>
+        </Grid>
+      </Container>
+    </ThemeProvider>
+  );
+};
+
+export default App;

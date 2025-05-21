@@ -295,6 +295,7 @@ func main() {
 	r.HandleFunc("/api/camera/info", getCameraInfo).Methods("GET")
 	r.HandleFunc("/api/camera/resolutions", getResolutions).Methods("GET")
 	r.HandleFunc("/api/camera/change-resolution", changeResolution).Methods("POST")
+	r.HandleFunc("/api/camera/change-resolution-simple", changeResolutionSimple).Methods("POST")
 	r.HandleFunc("/api/camera/stream-url", getStreamURL).Methods("GET")
 	r.HandleFunc("/api/camera/launch-vlc", launchVLCWithStream).Methods("POST")
 	r.HandleFunc("/api/camera/config", getConfigDetails).Methods("GET")
@@ -303,6 +304,8 @@ func main() {
 	r.HandleFunc("/api/cameras", addCameraHandler).Methods("POST")
 	r.HandleFunc("/api/cameras/{id}", deleteCameraHandler).Methods("DELETE")
 	r.HandleFunc("/api/apply-config", applyConfigHandler).Methods("POST")
+	r.HandleFunc("/api/camera/resolutions-simple", getResolutionsSimple).Methods("GET")
+	r.HandleFunc("/api/camera/details-simple", getCameraDetailsSimple).Methods("GET")
 
 	// Add CORS support
 	corsHandler := handlers.CORS(
@@ -376,10 +379,59 @@ func getResolutions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log the response structure before parsing
+	h264 := options.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+	fmt.Printf("getResolutions: Raw H264 options before parsing: %+v\n", h264)
+	fmt.Printf("getResolutions: Found %d resolutions in raw response\n", len(h264.ResolutionsAvailable))
+	for _, res := range h264.ResolutionsAvailable {
+		fmt.Printf("getResolutions: Resolution from raw response: %dx%d\n", res.Width, res.Height)
+	}
+
 	h264Options := lib.ParseH264Options(options)
-	fmt.Println("getResolutions: Successfully retrieved and parsed options")
+	fmt.Printf("getResolutions: Parsed options result: %+v\n", h264Options)
 
 	// Set content type header and write the response
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h264Options)
+}
+
+// Handler to get available resolutions without needing profile/config selection
+func getResolutionsSimple(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("\ngetResolutionsSimple: Starting request for resolution options")
+
+	camera, err := getCamera()
+	if err != nil {
+		fmt.Printf("getResolutionsSimple: Failed to connect to camera: %v\n", err)
+		http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get active profile and config
+	profileToken, configToken, err := lib.GetActiveProfile(camera)
+	if err != nil {
+		fmt.Printf("getResolutionsSimple: Failed to get active profile/config: %v\n", err)
+		http.Error(w, fmt.Sprintf("Failed to get active profile/config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("getResolutionsSimple: Using profileToken=%s, configToken=%s\n", profileToken, configToken)
+
+	options, err := lib.GetVideoEncoderOptions(camera, configToken, profileToken)
+	if err != nil {
+		fmt.Printf("getResolutionsSimple: Failed to get video encoder options: %v\n", err)
+		http.Error(w, fmt.Sprintf("Failed to get resolutions: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Log available resolutions
+	h264 := options.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+	fmt.Printf("getResolutionsSimple: Found %d supported resolutions:\n", len(h264.ResolutionsAvailable))
+	for _, res := range h264.ResolutionsAvailable {
+		fmt.Printf("- %dx%d\n", res.Width, res.Height)
+	}
+
+	h264Options := lib.ParseH264Options(options)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(h264Options)
 }
@@ -419,24 +471,57 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("Invalid request payload: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	camera, err := getCamera()
 	if err != nil {
-		http.Error(w, "Failed to connect to camera", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	streamURI, err := lib.GetStreamURI(camera, payload.ProfileToken)
+	var streamURI string
+	if payload.ProfileToken == "active" {
+		// Get active profile and use it
+		profileToken, _, err := lib.GetActiveProfile(camera)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get active profile: %v", err), http.StatusInternalServerError)
+			return
+		}
+		fmt.Printf("Using active profile token: %s\n", profileToken)
+		streamURI, err = lib.GetStreamURI(camera, profileToken)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get stream URI for active profile: %v", err), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Use specified profile token
+		fmt.Printf("Using specified profile token: %s\n", payload.ProfileToken)
+		streamURI, err = lib.GetStreamURI(camera, payload.ProfileToken)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Failed to get stream URI for profile %s: %v", payload.ProfileToken, err), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	if err != nil {
 		http.Error(w, "Failed to get stream URI", http.StatusInternalServerError)
 		return
 	}
+	fmt.Printf("Got stream URI: %s\n", streamURI)
 
 	// Check if VLC is already running
 	vlcRunning := isVLCRunning()
+	fmt.Printf("VLC running status: %v\n", vlcRunning)
+
+	// Get VLC path to verify it's installed
+	vlcPath, err := getVLCPath()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("VLC is not installed or not found: %v", err), http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("Found VLC at: %s\n", vlcPath)
 
 	// Launch or inject the stream into VLC
 	fmt.Printf("Attempting to %s VLC with stream...\n",
@@ -444,8 +529,22 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 
 	err = launchOrInjectVLC(streamURI)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to launch or inject stream into VLC: %v", err), http.StatusInternalServerError)
-		return
+		// Log more details about the failure
+		fmt.Printf("Failed to handle VLC: %v\n", err)
+		if vlcRunning {
+			fmt.Println("Attempting to close existing VLC instances and retry...")
+			closeVLCInstances()
+			time.Sleep(1 * time.Second)
+			err = launchNewVLCInstance(streamURI)
+			if err != nil {
+				http.Error(w, fmt.Sprintf("Failed to launch new VLC instance after closing existing: %v", err), http.StatusInternalServerError)
+				return
+			}
+			vlcRunning = false
+		} else {
+			http.Error(w, fmt.Sprintf("Failed to launch VLC: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Create appropriate success message based on what we did
@@ -870,6 +969,200 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// Handler to change resolution with automatic profile/config detection
+func changeResolutionSimple(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("\nchangeResolutionSimple: Starting resolution change request")
+
+	var payload struct {
+		CameraIds   []string `json:"cameraIds"`
+		Width       int      `json:"width"`
+		Height      int      `json:"height"`
+		FrameRate   int      `json:"frameRate"`
+		BitRate     int      `json:"bitRate"`
+		GopLength   int      `json:"gopLength"`
+		H264Profile string   `json:"h264Profile"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		fmt.Printf("changeResolutionSimple: Failed to decode request payload: %v\n", err)
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	fmt.Printf("changeResolutionSimple: Request to set resolution %dx%d for %d cameras\n",
+		payload.Width, payload.Height, len(payload.CameraIds))
+
+	type UpdateResult struct {
+		CameraId         string                      `json:"cameraId"`
+		Success          bool                        `json:"success"`
+		Error            string                      `json:"error,omitempty"`
+		ValidationResult *validator.ValidationResult `json:"validationResult,omitempty"`
+	}
+	results := make([]UpdateResult, 0)
+
+	expectedConfig := validator.VideoConfig{
+		Width:       payload.Width,
+		Height:      payload.Height,
+		FrameRate:   payload.FrameRate,
+		BitRate:     payload.BitRate,
+		GopLength:   payload.GopLength,
+		H264Profile: payload.H264Profile,
+	}
+
+	for _, cameraId := range payload.CameraIds {
+		var targetCamera *Camera
+		for _, cam := range cameras {
+			if cam.ID == cameraId {
+				targetCamera = &cam
+				break
+			}
+		}
+		if targetCamera == nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    "Camera not found",
+			})
+			continue
+		}
+
+		if targetCamera.IsFake {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  true,
+				Error:    "Skipped: This is a simulated camera",
+			})
+			continue
+		}
+
+		camera := lib.NewCamera(targetCamera.IP, 80, targetCamera.Username, targetCamera.Password)
+		if err := camera.Connect(); err != nil {
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to connect: %v", err),
+			})
+			continue
+		}
+		// Get active profile and config
+		profileToken, configToken, err := lib.GetActiveProfile(camera)
+		if err != nil {
+			fmt.Printf("Failed to get active profile/config for camera %s: %v\n", cameraId, err)
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to get active profile/config: %v", err),
+			})
+			continue
+		}
+		fmt.Printf("Got active profile=%s, config=%s for camera %s\n", profileToken, configToken, cameraId)
+
+		// Get available video encoder options
+		options, err := lib.GetVideoEncoderOptions(camera, configToken, profileToken)
+		if err != nil {
+			fmt.Printf("Failed to get video encoder options for camera %s: %v\n", cameraId, err)
+		} else {
+			h264 := options.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+			fmt.Printf("Available resolutions for camera %s:\n", cameraId)
+			for _, res := range h264.ResolutionsAvailable {
+				fmt.Printf("- %dx%d\n", res.Width, res.Height)
+			}
+		}
+
+		// Get the current config to preserve the name
+		currentConfig, err := lib.GetVideoEncoderConfiguration(camera, configToken)
+		if err != nil {
+			fmt.Printf("Failed to get current config for camera %s: %v\n", cameraId, err)
+			results = append(results, UpdateResult{
+				CameraId: cameraId,
+				Success:  false,
+				Error:    fmt.Sprintf("Failed to get current config: %v", err),
+			})
+			continue
+		}
+		fmt.Printf("Current config for camera %s: %dx%d @ %dfps\n",
+			cameraId, currentConfig.Width, currentConfig.Height, currentConfig.FrameRate)
+
+		// Apply the configuration changes
+		err = lib.SetVideoEncoderConfiguration(
+			camera,
+			configToken,
+			currentConfig.Name,
+			payload.Width,
+			payload.Height,
+			payload.FrameRate,
+			payload.BitRate,
+			payload.GopLength,
+			payload.H264Profile,
+		)
+
+		if err != nil {
+			fmt.Printf("Failed to set config for camera %s: %v\n", cameraId, err)
+			results = append(results, UpdateResult{
+				CameraId:         cameraId,
+				Success:          false,
+				Error:            fmt.Sprintf("Failed to set config: %v", err),
+				ValidationResult: nil,
+			})
+			continue
+		}
+
+		fmt.Printf("Successfully applied config to camera %s\n", cameraId)
+
+		// Get the stream URL for validation
+		streamURI, err := lib.GetStreamURI(camera, profileToken)
+		if err != nil {
+			results = append(results, UpdateResult{
+				CameraId:         cameraId,
+				Success:          true,
+				Error:            fmt.Sprintf("Config applied but couldn't validate: %v", err),
+				ValidationResult: nil,
+			})
+			continue
+		}
+
+		// Validate the configuration
+		var errStr string
+		validationResult, err := validator.ValidateVideoConfig(streamURI, expectedConfig)
+		if err != nil {
+			errStr = err.Error()
+		}
+		results = append(results, UpdateResult{
+			CameraId:         cameraId,
+			Success:          err == nil && validationResult.IsValid,
+			ValidationResult: validationResult,
+			Error:            errStr,
+		})
+	}
+
+	successCount := 0
+	validatedCount := 0
+	for _, result := range results {
+		if result.Success {
+			successCount++
+			if result.ValidationResult != nil && result.ValidationResult.IsValid {
+				validatedCount++
+			}
+		}
+	}
+
+	response := struct {
+		Message string         `json:"message"`
+		Results []UpdateResult `json:"results"`
+	}{
+		Message: fmt.Sprintf(
+			"Updated %d of %d cameras (%d validated successfully)",
+			successCount,
+			len(payload.CameraIds),
+			validatedCount,
+		),
+		Results: results,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // Handler to get single configuration details
 func getConfigDetails(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("getConfigDetails: Starting request for configuration details")
@@ -963,4 +1256,78 @@ func getDeviceInfo(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// Handler to get camera details using active profile and config
+func getCameraDetailsSimple(w http.ResponseWriter, r *http.Request) {
+	camera, err := getCamera()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get active profile and config
+	profileToken, configToken, err := lib.GetActiveProfile(camera)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get active profile/config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get stream URL
+	streamURI, err := lib.GetStreamURI(camera, profileToken)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get stream URI: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get config details
+	configDetails, err := lib.GetVideoEncoderConfiguration(camera, configToken)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get config details: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Get device info
+	deviceInfoRequest := device.GetDeviceInformation{}
+	deviceInfoResponse, err := camera.Device.CallMethod(deviceInfoRequest)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get device info: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Read and parse device info response
+	rawDeviceInfoXML, err := io.ReadAll(deviceInfoResponse.Body)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read device info: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var deviceInfoXML struct {
+		Body struct {
+			GetDeviceInformationResponse struct {
+				Manufacturer    string `xml:"Manufacturer"`
+				Model           string `xml:"Model"`
+				FirmwareVersion string `xml:"FirmwareVersion"`
+				SerialNumber    string `xml:"SerialNumber"`
+				HardwareId      string `xml:"HardwareId"`
+			} `xml:"GetDeviceInformationResponse"`
+		} `xml:"Body"`
+	}
+
+	if err := xml.Unmarshal(rawDeviceInfoXML, &deviceInfoXML); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse device info: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"streamUrl":  streamURI,
+		"config":     configDetails,
+		"deviceInfo": deviceInfoXML.Body.GetDeviceInformationResponse,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to encode response: %v", err), http.StatusInternalServerError)
+		return
+	}
 }

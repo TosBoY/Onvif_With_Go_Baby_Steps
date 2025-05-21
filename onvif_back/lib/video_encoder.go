@@ -4,12 +4,69 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 
 	"github.com/use-go/onvif/media"
 	mxsd "github.com/use-go/onvif/xsd"
 	xsd "github.com/use-go/onvif/xsd/onvif"
 )
+
+// cameraSupportedConfigs caches the supported configurations for each camera configuration token
+var cameraSupportedConfigs = make(map[string]*CameraSupportedConfigs)
+
+// GetCameraSupportedConfigs retrieves and caches the supported configurations for a camera
+func GetCameraSupportedConfigs(c *Camera, configToken string) (*CameraSupportedConfigs, error) {
+	// Check if we already have cached configs
+	if configs, ok := cameraSupportedConfigs[configToken]; ok {
+		return configs, nil
+	}
+
+	// Get the supported options
+	options, err := GetVideoEncoderOptions(c, configToken, "")
+	if err != nil {
+		return nil, fmt.Errorf("error getting encoder options: %v", err)
+	}
+
+	// Create new configs
+	configs := &CameraSupportedConfigs{}
+
+	// Parse H264 options
+	h264 := options.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+
+	// Get supported resolutions
+	for _, res := range h264.ResolutionsAvailable {
+		configs.ResolutionsAvailable = append(configs.ResolutionsAvailable, Resolution{
+			Width:  res.Width,
+			Height: res.Height,
+		})
+	}
+
+	// Get frame rate and gov length ranges
+	configs.FrameRateRange = Range{
+		Min: h264.FrameRateRange.Min,
+		Max: h264.FrameRateRange.Max,
+	}
+
+	configs.GovLengthRange = Range{
+		Min: h264.GovLengthRange.Min,
+		Max: h264.GovLengthRange.Max,
+	}
+
+	// Get supported H264 profiles
+	configs.H264ProfilesSupported = h264.H264ProfilesSupported
+
+	// Cache the configs
+	cameraSupportedConfigs[configToken] = configs
+
+	fmt.Printf("GetCameraSupportedConfigs: Cached %d supported resolutions for config %s\n",
+		len(configs.ResolutionsAvailable), configToken)
+	for _, res := range configs.ResolutionsAvailable {
+		fmt.Printf("  - %dx%d\n", res.Width, res.Height)
+	}
+
+	return configs, nil
+}
 
 // GetAllVideoEncoderConfigurations retrieves all video encoder configurations
 func GetAllVideoEncoderConfigurations(c *Camera) ([]VideoEncoderConfig, error) {
@@ -188,10 +245,20 @@ func GetVideoEncoderOptions(c *Camera, configToken, profileToken string) (*Video
 		return nil, fmt.Errorf("error reading response body: %v", err)
 	}
 
+	// Log the raw XML for debugging
+	fmt.Printf("GetVideoEncoderOptions: Raw XML response:\n%s\n", string(body))
+
 	// Parse the response
 	var optionsResp VideoEncoderConfigurationOptionsResponse
 	if err := xml.Unmarshal(body, &optionsResp); err != nil {
 		return nil, fmt.Errorf("error unmarshalling response: %v", err)
+	}
+
+	// Log the parsed options for debugging
+	h264 := optionsResp.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
+	fmt.Printf("GetVideoEncoderOptions: Parsed %d resolutions from H264 options\n", len(h264.ResolutionsAvailable))
+	for _, res := range h264.ResolutionsAvailable {
+		fmt.Printf("GetVideoEncoderOptions: Found resolution %dx%d\n", res.Width, res.Height)
 	}
 
 	return &optionsResp, nil
@@ -235,6 +302,72 @@ func GetH264Profiles(c *Camera, configToken, profileToken string) ([]string, err
 	return optionsResp.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264.H264ProfilesSupported, nil
 }
 
+// FindClosestResolution finds the closest supported resolution to the requested one
+func FindClosestResolution(requestedWidth, requestedHeight int, supportedResolutions []Resolution) Resolution {
+	if len(supportedResolutions) == 0 {
+		return Resolution{Width: requestedWidth, Height: requestedHeight}
+	}
+
+	// Calculate the requested aspect ratio
+	requestedRatio := float64(requestedWidth) / float64(requestedHeight)
+	requestedPixels := requestedWidth * requestedHeight
+
+	// Initialize variables for finding closest match
+	var closestRes Resolution
+	minDiff := math.MaxFloat64
+
+	fmt.Printf("FindClosestResolution: Finding closest to %dx%d (ratio %.3f, pixels %d)\n",
+		requestedWidth, requestedHeight, requestedRatio, requestedPixels)
+
+	for _, res := range supportedResolutions {
+		// Calculate metrics for comparison
+		resRatio := float64(res.Width) / float64(res.Height)
+		resPixels := res.Width * res.Height
+
+		// Calculate differences
+		ratioDiff := math.Abs(resRatio - requestedRatio)
+		pixelDiff := math.Abs(float64(resPixels - requestedPixels))
+
+		// Normalize pixel difference (as it can be very large)
+		normalizedPixelDiff := pixelDiff / float64(requestedPixels)
+
+		// Combined difference score - weighted sum of ratio and pixel differences
+		// We weight ratio difference more heavily (0.7) than pixel count difference (0.3)
+		totalDiff := (ratioDiff * 0.7) + (normalizedPixelDiff * 0.3)
+
+		fmt.Printf("  Checking %dx%d: ratio %.3f (diff %.3f), pixels %d (norm diff %.3f), total diff %.3f\n",
+			res.Width, res.Height, resRatio, ratioDiff, resPixels, normalizedPixelDiff, totalDiff)
+
+		if totalDiff < minDiff {
+			minDiff = totalDiff
+			closestRes = res
+		}
+	}
+
+	fmt.Printf("FindClosestResolution: Closest match is %dx%d\n", closestRes.Width, closestRes.Height)
+	return closestRes
+}
+
+// CheckSupportedResolution verifies if a resolution is supported by a camera config
+func CheckSupportedResolution(c *Camera, configToken string, width, height int) (bool, []Resolution, error) {
+	// Get the supported configurations (from cache if available)
+	configs, err := GetCameraSupportedConfigs(c, configToken)
+	if err != nil {
+		return false, nil, fmt.Errorf("error getting supported configurations: %v", err)
+	}
+
+	// Check if the resolution is supported
+	resolutionSupported := false
+	for _, res := range configs.ResolutionsAvailable {
+		if res.Width == width && res.Height == height {
+			resolutionSupported = true
+			break
+		}
+	}
+
+	return resolutionSupported, configs.ResolutionsAvailable, nil
+}
+
 // SetVideoEncoderConfiguration changes an encoder configuration
 func SetVideoEncoderConfiguration(
 	c *Camera,
@@ -251,6 +384,50 @@ func SetVideoEncoderConfiguration(
 		return fmt.Errorf("camera not connected")
 	}
 
+	fmt.Printf("SetVideoEncoderConfiguration: Setting resolution %dx%d for config %s\n", width, height, configToken)
+
+	// Check if the requested resolution is supported
+	supported, resolutions, err := CheckSupportedResolution(c, configToken, width, height)
+	if err != nil {
+		return err
+	}
+
+	if !supported {
+		// Find the closest supported resolution
+		closestRes := FindClosestResolution(width, height, resolutions)
+		fmt.Printf("SetVideoEncoderConfiguration: Requested resolution %dx%d is not supported, using closest match %dx%d\n",
+			width, height, closestRes.Width, closestRes.Height)
+		width = closestRes.Width
+		height = closestRes.Height
+	}
+
+	// Get current config first to preserve other settings
+	currentConfig, err := GetVideoEncoderConfiguration(c, configToken)
+	if err != nil {
+		return fmt.Errorf("error getting current config: %v", err)
+	}
+
+	// Preserve original values if not specified
+	if configName == "" {
+		configName = currentConfig.Name
+	}
+	if frameRate == 0 {
+		frameRate = currentConfig.FrameRate
+	}
+	if bitRate == 0 {
+		bitRate = currentConfig.BitRate
+	}
+	if govLength == 0 {
+		govLength = currentConfig.GovLength
+	}
+	if h264Profile == "" {
+		h264Profile = currentConfig.H264Profile
+	}
+
+	fmt.Printf("SetVideoEncoderConfiguration: Current config: %+v\n", currentConfig)
+	fmt.Printf("SetVideoEncoderConfiguration: New settings: width=%d height=%d frameRate=%d bitRate=%d govLength=%d profile=%s\n",
+		width, height, frameRate, bitRate, govLength, h264Profile)
+
 	// Create the configuration request
 	setConfigRequest := media.SetVideoEncoderConfiguration{
 		Configuration: xsd.VideoEncoderConfiguration{
@@ -263,16 +440,17 @@ func SetVideoEncoderConfiguration(
 				Width:  mxsd.Int(width),
 				Height: mxsd.Int(height),
 			},
-			Quality: 6.0, // Standard quality value
 			RateControl: xsd.VideoRateControl{
 				FrameRateLimit:   mxsd.Int(frameRate),
-				EncodingInterval: mxsd.Int(1), // Standard encoding interval
+				EncodingInterval: mxsd.Int(1),
 				BitrateLimit:     mxsd.Int(bitRate),
 			},
 			H264: xsd.H264Configuration{
 				GovLength:   mxsd.Int(govLength),
 				H264Profile: xsd.H264Profile(h264Profile),
 			},
+			Quality:        6.0,
+			SessionTimeout: "PT60S",
 			Multicast: xsd.MulticastConfiguration{
 				Address: xsd.IPAddress{
 					Type:        "IPv4",
@@ -282,7 +460,6 @@ func SetVideoEncoderConfiguration(
 				TTL:       5,
 				AutoStart: false,
 			},
-			SessionTimeout: "PT60S",
 		},
 		ForcePersistence: mxsd.Boolean(true),
 	}
@@ -300,9 +477,12 @@ func SetVideoEncoderConfiguration(
 		return fmt.Errorf("error reading response body: %v", err)
 	}
 
+	// Print raw response for debugging
+	fmt.Printf("SetVideoEncoderConfiguration: Raw response:\n%s\n", string(body))
+
 	// Check if the response has a fault element
 	if ContainsFault(body) {
-		return fmt.Errorf("server returned an error in response to SetVideoEncoderConfiguration")
+		return fmt.Errorf("server returned an error: check camera response")
 	}
 
 	return nil

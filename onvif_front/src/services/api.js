@@ -32,10 +32,31 @@ const api = {
       throw error;
     }
   },
+
+  getResolutionsSimple: async () => {
+    try {
+      const response = await axios.get('/api/camera/resolutions-simple');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching resolutions:', error);
+      throw error;
+    }
+  },
+
   changeResolution: async (configData) => {
     try {
       // configData now includes cameraId and other configuration details
       const response = await axios.post('/api/camera/change-resolution', configData);
+      return response.data;
+    } catch (error) {
+      console.error('Error changing resolution:', error);
+      throw error;
+    }
+  },
+
+  changeResolutionSimple: async (configData) => {
+    try {
+      const response = await axios.post('/api/camera/change-resolution-simple', configData);
       return response.data;
     } catch (error) {
       console.error('Error changing resolution:', error);
@@ -83,6 +104,16 @@ const api = {
       return response.data;
     } catch (error) {
       console.error('Error fetching device information:', error);
+      throw error;
+    }
+  },
+
+  getCameraDetailsSimple: async () => {
+    try {
+      const response = await axios.get('/api/camera/details-simple');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching camera details:', error);
       throw error;
     }
   },

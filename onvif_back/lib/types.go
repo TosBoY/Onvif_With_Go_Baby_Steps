@@ -90,7 +90,7 @@ type StreamUriResponse struct {
 
 // VideoEncoderConfigurationOptionsResponse is the structure for encoder options
 type VideoEncoderConfigurationOptionsResponse struct {
-	XMLName xml.Name `xml:"Envelope"`
+	XMLName xml.Name `xml:"http://www.w3.org/2003/05/soap-envelope Envelope"`
 	Body    struct {
 		GetVideoEncoderConfigurationOptionsResponse struct {
 			Options struct {
@@ -99,49 +99,12 @@ type VideoEncoderConfigurationOptionsResponse struct {
 					Max int `xml:"Max"`
 				} `xml:"QualityRange"`
 
-				// JPEG options fields
-				JPEG struct {
-					ResolutionsAvailable []struct {
-						Width  int `xml:"Width"`
-						Height int `xml:"Height"`
-					} `xml:"ResolutionsAvailable"`
-					FrameRateRange struct {
-						Min int `xml:"Min"`
-						Max int `xml:"Max"`
-					} `xml:"FrameRateRange"`
-					EncodingIntervalRange struct {
-						Min int `xml:"Min"`
-						Max int `xml:"Max"`
-					} `xml:"EncodingIntervalRange"`
-				} `xml:"JPEG"`
-
-				// MPEG4 options fields
-				MPEG4 struct {
-					ResolutionsAvailable []struct {
-						Width  int `xml:"Width"`
-						Height int `xml:"Height"`
-					} `xml:"ResolutionsAvailable"`
-					GovLengthRange struct {
-						Min int `xml:"Min"`
-						Max int `xml:"Max"`
-					} `xml:"GovLengthRange"`
-					FrameRateRange struct {
-						Min int `xml:"Min"`
-						Max int `xml:"Max"`
-					} `xml:"FrameRateRange"`
-					EncodingIntervalRange struct {
-						Min int `xml:"Min"`
-						Max int `xml:"Max"`
-					} `xml:"EncodingIntervalRange"`
-					Mpeg4ProfilesSupported []string `xml:"Mpeg4ProfilesSupported"`
-				} `xml:"MPEG4"`
-
-				// H264 options fields
+				// H264 specific options
 				H264 struct {
 					ResolutionsAvailable []struct {
-						Width  int `xml:"Width"`
-						Height int `xml:"Height"`
-					} `xml:"ResolutionsAvailable"`
+						Width  int `xml:"http://www.onvif.org/ver10/schema Width"`
+						Height int `xml:"http://www.onvif.org/ver10/schema Height"`
+					} `xml:"http://www.onvif.org/ver10/schema ResolutionsAvailable"`
 					GovLengthRange struct {
 						Min int `xml:"Min"`
 						Max int `xml:"Max"`
@@ -155,14 +118,47 @@ type VideoEncoderConfigurationOptionsResponse struct {
 						Max int `xml:"Max"`
 					} `xml:"EncodingIntervalRange"`
 					H264ProfilesSupported []string `xml:"H264ProfilesSupported"`
-				} `xml:"H264"`
+				} `xml:"http://www.onvif.org/ver10/schema H264"`
 
-				Extension struct {
-					// Extension fields if needed
-				} `xml:"Extension"`
+				// MPEG4 specific options
+				MPEG4 struct {
+					ResolutionsAvailable []struct {
+						Width  int `xml:"http://www.onvif.org/ver10/schema Width"`
+						Height int `xml:"http://www.onvif.org/ver10/schema Height"`
+					} `xml:"http://www.onvif.org/ver10/schema ResolutionsAvailable"`
+					GovLengthRange struct {
+						Min int `xml:"Min"`
+						Max int `xml:"Max"`
+					} `xml:"GovLengthRange"`
+					FrameRateRange struct {
+						Min int `xml:"Min"`
+						Max int `xml:"Max"`
+					} `xml:"FrameRateRange"`
+					EncodingIntervalRange struct {
+						Min int `xml:"Min"`
+						Max int `xml:"Max"`
+					} `xml:"EncodingIntervalRange"`
+					Mpeg4ProfilesSupported []string `xml:"Mpeg4ProfilesSupported"`
+				} `xml:"http://www.onvif.org/ver10/schema MPEG4"`
+
+				// JPEG options
+				JPEG struct {
+					ResolutionsAvailable []struct {
+						Width  int `xml:"http://www.onvif.org/ver10/schema Width"`
+						Height int `xml:"http://www.onvif.org/ver10/schema Height"`
+					} `xml:"http://www.onvif.org/ver10/schema ResolutionsAvailable"`
+					FrameRateRange struct {
+						Min int `xml:"Min"`
+						Max int `xml:"Max"`
+					} `xml:"FrameRateRange"`
+					EncodingIntervalRange struct {
+						Min int `xml:"Min"`
+						Max int `xml:"Max"`
+					} `xml:"EncodingIntervalRange"`
+				} `xml:"http://www.onvif.org/ver10/schema JPEG"`
 			} `xml:"Options"`
-		} `xml:"GetVideoEncoderConfigurationOptionsResponse"`
-	} `xml:"Body"`
+		} `xml:"http://www.onvif.org/ver10/media/wsdl GetVideoEncoderConfigurationOptionsResponse"`
+	} `xml:"http://www.w3.org/2003/05/soap-envelope Body"`
 }
 
 // AudioEncoderConfigurationOptionsResponse represents audio encoder options
@@ -307,6 +303,15 @@ type VideoEncoderOptions struct {
 	JPEG         *JpegOptions
 	MPEG4        *Mpeg4Options
 	QualityRange Range
+}
+
+// CameraSupportedConfigs stores the supported configurations for a camera
+type CameraSupportedConfigs struct {
+	ResolutionsAvailable  []Resolution
+	FrameRateRange        Range
+	BitrateRange          Range
+	GovLengthRange        Range
+	H264ProfilesSupported []string
 }
 
 type GetCapabilities struct {

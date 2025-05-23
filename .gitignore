@@ -1,7 +1,8 @@
 # Ignore specific folders
 backup/
 onvif_test/
-ffprobe/
+/ffprobe/*
+!ffprobe/.gitkeep
 
 # Go backend
 /onvif_back/vendor/

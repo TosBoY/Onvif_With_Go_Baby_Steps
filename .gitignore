@@ -1,6 +1,7 @@
 # Ignore specific folders
 backup/
 onvif_test/
+ffprobe/
 
 # Go backend
 /onvif_back/vendor/
@@ -60,8 +61,8 @@ go.work
 ehthumbs.db
 Thumbs.db
 
-# Inclusions
-!/ffprobe/ffprobe.exe
+# # Inclusions
+# !/ffprobe/ffprobe.exe
 
 # Others
 todolists.txt

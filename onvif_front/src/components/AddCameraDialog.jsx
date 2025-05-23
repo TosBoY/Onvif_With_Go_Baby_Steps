@@ -16,7 +16,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import api from '../services/api';
 
-const AddCameraDialog = ({ open, onClose, onAdd }) => {
+const AddCameraDialog = ({ open, onClose }) => {
   const [formData, setFormData] = useState({
     ip: '',
     username: '',
@@ -39,9 +39,8 @@ const AddCameraDialog = ({ open, onClose, onAdd }) => {
     setError('');
     setLoading(true);
 
-    try {      const response = await api.addCamera(formData);
-      onAdd(response);
-      onClose();
+    try {
+      await api.addCamera(formData);
       // Reset form
       setFormData({
         ip: '',
@@ -49,6 +48,7 @@ const AddCameraDialog = ({ open, onClose, onAdd }) => {
         password: '',
         isFake: false
       });
+      onClose(true); // Pass true to indicate successful addition
     } catch (error) {
       setError(error.response?.data || 'Failed to add camera');
     } finally {
@@ -56,12 +56,24 @@ const AddCameraDialog = ({ open, onClose, onAdd }) => {
     }
   };
 
+  const handleClose = () => {
+    // Reset form and error state when closing
+    setFormData({
+      ip: '',
+      username: '',
+      password: '',
+      isFake: false
+    });
+    setError('');
+    onClose(false);
+  };
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
       <DialogTitle>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">Add New Camera</Typography>
-          <IconButton onClick={onClose} size="small">
+          <IconButton onClick={handleClose} size="small">
             <CloseIcon />
           </IconButton>
         </Box>
@@ -116,7 +128,7 @@ const AddCameraDialog = ({ open, onClose, onAdd }) => {
           />
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={handleClose}>Cancel</Button>
           <Button
             type="submit"
             variant="contained"

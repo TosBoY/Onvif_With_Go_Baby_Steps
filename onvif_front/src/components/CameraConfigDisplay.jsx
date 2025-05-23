@@ -8,12 +8,15 @@ import {
   IconButton,
   Button,
   Paper,
+  Tooltip,
 } from '@mui/material';
 import InfoIcon from '@mui/icons-material/Info';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import AddIcon from '@mui/icons-material/Add';
 import axios from 'axios';
 import CameraDetailsPopup from './CameraDetailsPopup';
 import AddCameraDialog from './AddCameraDialog';
+import api from '../services/api';
 
 const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
   const [cameras, setCameras] = useState([]);
@@ -21,6 +24,7 @@ const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [launchingVLC, setLaunchingVLC] = useState(null);
 
   useEffect(() => {
     axios.get('/api/cameras')
@@ -64,6 +68,17 @@ const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
     }
   };
 
+  const handleLaunchVLC = async (cameraId) => {
+    setLaunchingVLC(cameraId);
+    try {
+      await api.launchVLC(cameraId);
+    } catch (error) {
+      console.error('Error launching VLC:', error);
+    } finally {
+      setLaunchingVLC(null);
+    }
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
@@ -83,7 +98,7 @@ const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
         </Button>
       </Box>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: 2, minWidth: '400px' }}>
         <FormGroup>
           {cameras.map((camera) => (
             <Box
@@ -108,14 +123,27 @@ const CameraConfigDisplay = ({ selectedCameras, onCameraSelectionChange }) => {
                     Camera {camera.id} - {camera.ip}
                   </Typography>
                 }
+                sx={{ flexGrow: 1 }}
               />
-              <IconButton
-                size="small"
-                onClick={() => handleInfoClick(camera)}
-                disabled={camera.isFake}
-              >
-                <InfoIcon />
-              </IconButton>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Tooltip title="Open in VLC">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleLaunchVLC(camera.id)}
+                    disabled={camera.isFake || launchingVLC === camera.id}
+                  >
+                    <PlayArrowIcon />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Camera Info">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleInfoClick(camera)}
+                  >
+                    <InfoIcon />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
           ))}
         </FormGroup>

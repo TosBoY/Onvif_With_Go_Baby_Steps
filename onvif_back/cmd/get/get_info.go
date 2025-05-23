@@ -14,7 +14,7 @@ import (
 const (
 	cameraIP = "192.168.1.12" // Replace with your camera's IP
 	username = "admin"        // Replace with your camera's username
-	password = "admin123"     // Replace with your camera's password
+	password = "Admin123"     // Replace with your camera's password
 )
 
 // Define structs to parse the ONVIF GetCapabilities response
@@ -174,7 +174,7 @@ type DeviceInformationResponse struct {
 func main() {
 	// Create a new ONVIF device
 	device, err := onvif.NewDevice(onvif.DeviceParams{
-		Xaddr:    "192.168.1.12:80",
+		Xaddr:    "192.168.1.31:80",
 		Username: username,
 		Password: password,
 	})

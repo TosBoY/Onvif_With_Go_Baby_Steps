@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -17,9 +19,13 @@ import (
 
 // Camera connection details
 const (
-	cameraIP = "192.168.1.12" // Replace with your camera's IP
-	username = "admin"        // Replace with your camera's username
-	password = "admin123"     // Replace with your camera's password
+	// cameraIP = "192.168.1.12"
+	// username = "admin"
+	// password = "admin123"
+
+	cameraIP = "192.168.1.31"
+	username = "admin"
+	password = "Admin123"
 )
 
 func main() {
@@ -99,14 +105,10 @@ func main() {
 	selectedResolution := readIntInput(1, len(h264Options.ResolutionsAvailable)) - 1
 	resolution := h264Options.ResolutionsAvailable[selectedResolution]
 
-	// Display other H264 options
-	fmt.Println("\n===== Available H264 Options =====")
+	// Display frame rate options
+	fmt.Println("\n===== Frame Rate Options =====")
 	fmt.Printf("Frame Rate Range: %d-%d fps\n",
 		h264Options.FrameRateRange.Min, h264Options.FrameRateRange.Max)
-	fmt.Printf("GOP Length Range: %d-%d\n",
-		h264Options.GovLengthRange.Min, h264Options.GovLengthRange.Max)
-	fmt.Printf("Encoding Interval Range: %d-%d\n",
-		h264Options.EncodingIntervalRange.Min, h264Options.EncodingIntervalRange.Max)
 
 	// Let user choose frame rate
 	fmt.Printf("\nEnter frame rate (%d-%d fps):\n",
@@ -119,30 +121,6 @@ func main() {
 	fmt.Println("\nEnter bitrate in kbps (e.g., 4096 for 4Mbps):")
 	bitRate := readIntInput(256, 20000) // Reasonable range for most cameras
 
-	// Let user choose GOP length
-	fmt.Printf("\nEnter GOP length (%d-%d):\n",
-		h264Options.GovLengthRange.Min, h264Options.GovLengthRange.Max)
-	gopLength := readIntRangeInput(
-		h264Options.GovLengthRange.Min,
-		h264Options.GovLengthRange.Max)
-
-	// Let user select H264 profile if options are available
-	var h264Profile string
-	if len(h264Options.H264ProfilesSupported) > 0 {
-		fmt.Println("\n===== Available H264 Profiles =====")
-		for i, profile := range h264Options.H264ProfilesSupported {
-			fmt.Printf("%d. %s\n", i+1, profile)
-		}
-
-		fmt.Println("\nSelect an H264 profile (enter the number):")
-		selectedH264Profile := readIntInput(1, len(h264Options.H264ProfilesSupported)) - 1
-		h264Profile = h264Options.H264ProfilesSupported[selectedH264Profile]
-	} else {
-		// Use the current profile as fallback
-		h264Profile = config.H264Profile
-		fmt.Printf("\nNo H264 profiles reported. Using current profile: %s\n", h264Profile)
-	}
-
 	// Confirm the changes
 	fmt.Println("\n===== Configuration Summary =====")
 	fmt.Printf("Configuration: %s (Token: %s)\n", config.Name, config.Token)
@@ -150,8 +128,6 @@ func main() {
 	fmt.Printf("Resolution: %dx%d\n", resolution.Width, resolution.Height)
 	fmt.Printf("Frame Rate: %d fps\n", frameRate)
 	fmt.Printf("Bitrate: %d kbps\n", bitRate)
-	fmt.Printf("GOP Length: %d\n", gopLength)
-	fmt.Printf("H264 Profile: %s\n", h264Profile)
 
 	fmt.Println("\nApply these settings? (y/n):")
 	reader := bufio.NewReader(os.Stdin)
@@ -171,9 +147,9 @@ func main() {
 		fmt.Println("Current Stream URI:", currentUri)
 	}
 
-	// Apply the configuration changes using lib function
-	fmt.Println("\nApplying configuration changes...")
-	err = lib.SetVideoEncoderConfiguration(
+	// Apply the configuration changes using a modified function call
+	fmt.Println("\nApplying configuration changes (resolution and frame rate only)...")
+	err = setVideoEncoderResolutionAndFPS(
 		camera,
 		config.Token,
 		config.Name,
@@ -181,8 +157,6 @@ func main() {
 		resolution.Height,
 		frameRate,
 		bitRate,
-		gopLength,
-		h264Profile,
 	)
 
 	if err != nil {
@@ -249,6 +223,176 @@ func main() {
 	}
 
 	fmt.Println("\n🎬 All operations completed successfully 🎬")
+}
+
+// setVideoEncoderResolutionAndFPS sets only resolution and frame rate, completely avoiding GOP length
+func setVideoEncoderResolutionAndFPS(
+	camera *lib.Camera,
+	token string,
+	name string,
+	width int,
+	height int,
+	frameRate int,
+	bitRate int,
+) error {
+	// Get current configuration to preserve other settings
+	currentConfig, err := lib.GetVideoEncoderConfiguration(camera, token)
+	if err != nil {
+		return fmt.Errorf("could not get current configuration: %v", err)
+	}
+
+	// Verify that device is available
+	if camera.GetDevice() == nil {
+		return fmt.Errorf("camera device is nil, make sure the camera is connected")
+	}
+
+	fmt.Printf("\n==== DEBUGGING CAMERA CONFIGURATION ====\n")
+	fmt.Printf("Target settings: width=%d height=%d frameRate=%d bitRate=%d\n",
+		width, height, frameRate, bitRate)
+	fmt.Printf("Current settings: width=%d height=%d frameRate=%d bitRate=%d govLength=%d profile=%s\n",
+		currentConfig.Width, currentConfig.Height, currentConfig.FrameRate,
+		currentConfig.BitRate, currentConfig.GovLength, currentConfig.H264Profile)
+
+	// Helper function to verify changes
+	verifyChanges := func() (bool, error) {
+		fmt.Println("\n---- Verifying Changes ----")
+		updatedConfig, err := lib.GetVideoEncoderConfiguration(camera, token)
+		if err != nil {
+			return false, fmt.Errorf("failed to verify configuration changes: %v", err)
+		}
+		fmt.Printf("Current on camera: width=%d height=%d frameRate=%d bitRate=%d govLength=%d\n",
+			updatedConfig.Width, updatedConfig.Height, updatedConfig.FrameRate, updatedConfig.BitRate, updatedConfig.GovLength)
+		if updatedConfig.Width == width && updatedConfig.Height == height && updatedConfig.FrameRate == frameRate {
+			fmt.Printf("✅ Configuration successfully changed to target resolution/framerate.\n")
+			return true, nil
+		}
+		fmt.Printf("❌ Configuration NOT successfully changed. Target: %dx%d @%dfps. Actual: %dx%d @%dfps\n",
+			width, height, frameRate, updatedConfig.Width, updatedConfig.Height, updatedConfig.FrameRate)
+		return false, nil
+	}
+
+	// ==== METHOD 1: Standard SetVideoEncoderConfiguration ====
+	fmt.Println("\n==== METHOD 1: Standard SetVideoEncoderConfiguration ====")
+	fmt.Printf("Attempting to set configuration with lib.SetVideoEncoderConfiguration using current GovLength: %d and Profile: %s\n", currentConfig.GovLength, currentConfig.H264Profile)
+
+	// Try to set configuration without GovLength first
+	err = lib.SetVideoEncoderConfiguration(
+		camera,
+		token,
+		name,
+		width,
+		height,
+		frameRate,
+		bitRate,
+		0, // Try with 0 GovLength
+		currentConfig.H264Profile,
+	)
+
+	if err != nil {
+		fmt.Printf("Method 1 failed with 0 GovLength: %v\n", err)
+		// Try again with current GovLength
+		err = lib.SetVideoEncoderConfiguration(
+			camera,
+			token,
+			name,
+			width,
+			height,
+			frameRate,
+			bitRate,
+			currentConfig.GovLength,
+			currentConfig.H264Profile,
+		)
+		if err != nil {
+			fmt.Printf("Method 1 failed with current GovLength: %v\n", err)
+		}
+	}
+
+	// Verify Method 1
+	success, verifyErr := verifyChanges()
+	if verifyErr != nil {
+		fmt.Printf("Error during Method 1 verification: %v\n", verifyErr)
+	}
+	if success {
+		fmt.Println("Method 1 Succeeded and Verified.")
+		return nil
+	}
+	fmt.Println("Method 1 Failed or Did Not Update Configuration Correctly.")
+
+	// ==== METHOD 2: Minimal configuration with separate H264 section (omits GovLength) ====
+	fmt.Println("\n==== METHOD 2: Minimal configuration with direct CallMethod (omits GovLength) ====")
+	type minimalResConfig struct {
+		XMLName            xml.Name `xml:"http://www.onvif.org/ver10/media/wsdl SetVideoEncoderConfiguration"`
+		ConfigurationToken string   `xml:"Configuration>token,attr"`
+		Resolution         struct {
+			Width  int `xml:"Width,omitempty"`
+			Height int `xml:"Height,omitempty"`
+		} `xml:"Configuration>Resolution"`
+		RateControl struct {
+			FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
+			BitrateLimit   int `xml:"BitrateLimit,omitempty"`
+		} `xml:"Configuration>RateControl"`
+		ForcePersistence bool `xml:"ForcePersistence"`
+	}
+
+	method2Config := minimalResConfig{
+		ConfigurationToken: token,
+		Resolution: struct {
+			Width  int `xml:"Width,omitempty"`
+			Height int `xml:"Height,omitempty"`
+		}{
+			Width:  width,
+			Height: height,
+		},
+		RateControl: struct {
+			FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
+			BitrateLimit   int `xml:"BitrateLimit,omitempty"`
+		}{
+			FrameRateLimit: frameRate,
+			BitrateLimit:   bitRate,
+		},
+		ForcePersistence: true,
+	}
+
+	xmlData, _ := xml.MarshalIndent(method2Config, "", "  ")
+	fmt.Printf("Method 2 XML Request (omitting GovLength):\n%s\n", string(xmlData))
+
+	resp, err := camera.GetDevice().CallMethod(method2Config)
+	if err != nil {
+		fmt.Printf("Method 2 CallMethod failed: %v\n", err)
+		if resp != nil && resp.Body != nil {
+			responseData, readErr := io.ReadAll(resp.Body)
+			if readErr == nil {
+				fmt.Printf("Method 2 error response body:\n%s\n", string(responseData))
+			} else {
+				fmt.Printf("Method 2 failed to read error response body: %v\n", readErr)
+			}
+			resp.Body.Close()
+		}
+	} else {
+		fmt.Println("Method 2 CallMethod returned no error.")
+		if resp != nil && resp.Body != nil {
+			responseData, readErr := io.ReadAll(resp.Body)
+			if readErr == nil {
+				fmt.Printf("Method 2 success response body:\n%s\n", string(responseData))
+			} else {
+				fmt.Printf("Method 2 failed to read success response body: %v\n", readErr)
+			}
+			resp.Body.Close()
+		}
+	}
+
+	// Verify Method 2
+	success, verifyErr = verifyChanges()
+	if verifyErr != nil {
+		fmt.Printf("Error during Method 2 verification: %v\n", verifyErr)
+	}
+	if success {
+		fmt.Println("Method 2 Succeeded and Verified.")
+		return nil
+	}
+	fmt.Println("Method 2 Failed or Did Not Update Configuration Correctly.")
+
+	return fmt.Errorf("all methods failed to update resolution and/or framerate to %dx%d @%dfps", width, height, frameRate)
 }
 
 // refreshStream attempts to refresh the RTSP stream

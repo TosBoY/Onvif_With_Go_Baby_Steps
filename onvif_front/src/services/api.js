@@ -76,9 +76,9 @@ const api = {
     }
   },
   
-  launchVLC: async (profileToken) => {
+  launchVLC: async (cameraId) => {
     try {
-      const response = await axios.post('/api/camera/launch-vlc', { profileToken });
+      const response = await axios.post('/api/camera/launch-vlc', { cameraId });
       return response.data;
     } catch (error) {
       console.error('Error launching VLC:', error);
@@ -108,9 +108,11 @@ const api = {
     }
   },
 
-  getCameraDetailsSimple: async () => {
+  getCameraDetailsSimple: async (cameraId) => {
     try {
-      const response = await axios.get('/api/camera/details-simple');
+      const response = await axios.get('/api/camera/details-simple', {
+        params: { cameraId }
+      });
       return response.data;
     } catch (error) {
       console.error('Error fetching camera details:', error);

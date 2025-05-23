@@ -17,14 +17,27 @@ var cameraSupportedConfigs = make(map[string]*CameraSupportedConfigs)
 
 // GetCameraSupportedConfigs retrieves and caches the supported configurations for a camera
 func GetCameraSupportedConfigs(c *Camera, configToken string) (*CameraSupportedConfigs, error) {
+	fmt.Printf("\nGetCameraSupportedConfigs: Getting configs for token %s\n", configToken)
+
 	// Check if we already have cached configs
 	if configs, ok := cameraSupportedConfigs[configToken]; ok {
+		fmt.Printf("GetCameraSupportedConfigs: Using cached configs with %d resolutions\n",
+			len(configs.ResolutionsAvailable))
 		return configs, nil
 	}
 
-	// Get the supported options
-	options, err := GetVideoEncoderOptions(c, configToken, "")
+	// Get active profile first
+	profileToken, _, err := GetActiveProfile(c)
 	if err != nil {
+		return nil, fmt.Errorf("error getting active profile: %v", err)
+	}
+	fmt.Printf("GetCameraSupportedConfigs: Using active profile token: %s\n", profileToken)
+
+	// Get the supported options using both config token and profile token
+	fmt.Println("GetCameraSupportedConfigs: Cache miss, fetching from camera...")
+	options, err := GetVideoEncoderOptions(c, configToken, profileToken)
+	if err != nil {
+		fmt.Printf("GetCameraSupportedConfigs: Error getting encoder options: %v\n", err)
 		return nil, fmt.Errorf("error getting encoder options: %v", err)
 	}
 
@@ -35,11 +48,14 @@ func GetCameraSupportedConfigs(c *Camera, configToken string) (*CameraSupportedC
 	h264 := options.Body.GetVideoEncoderConfigurationOptionsResponse.Options.H264
 
 	// Get supported resolutions
+	fmt.Printf("GetCameraSupportedConfigs: Parsing %d resolutions from camera response\n",
+		len(h264.ResolutionsAvailable))
 	for _, res := range h264.ResolutionsAvailable {
 		configs.ResolutionsAvailable = append(configs.ResolutionsAvailable, Resolution{
 			Width:  res.Width,
 			Height: res.Height,
 		})
+		fmt.Printf("- Added resolution: %dx%d\n", res.Width, res.Height)
 	}
 
 	// Get frame rate and gov length ranges
@@ -56,13 +72,13 @@ func GetCameraSupportedConfigs(c *Camera, configToken string) (*CameraSupportedC
 	// Get supported H264 profiles
 	configs.H264ProfilesSupported = h264.H264ProfilesSupported
 
-	// Cache the configs
-	cameraSupportedConfigs[configToken] = configs
-
-	fmt.Printf("GetCameraSupportedConfigs: Cached %d supported resolutions for config %s\n",
-		len(configs.ResolutionsAvailable), configToken)
-	for _, res := range configs.ResolutionsAvailable {
-		fmt.Printf("  - %dx%d\n", res.Width, res.Height)
+	// Only cache if we got valid resolutions
+	if len(configs.ResolutionsAvailable) > 0 {
+		cameraSupportedConfigs[configToken] = configs
+		fmt.Printf("GetCameraSupportedConfigs: Successfully cached %d resolutions for config %s\n",
+			len(configs.ResolutionsAvailable), configToken)
+	} else {
+		fmt.Printf("GetCameraSupportedConfigs: Warning - No resolutions found, not caching\n")
 	}
 
 	return configs, nil
@@ -350,10 +366,18 @@ func FindClosestResolution(requestedWidth, requestedHeight int, supportedResolut
 
 // CheckSupportedResolution verifies if a resolution is supported by a camera config
 func CheckSupportedResolution(c *Camera, configToken string, width, height int) (bool, []Resolution, error) {
+	fmt.Printf("\nCheckSupportedResolution: Checking if %dx%d is supported for config %s\n", width, height, configToken)
+
 	// Get the supported configurations (from cache if available)
 	configs, err := GetCameraSupportedConfigs(c, configToken)
 	if err != nil {
+		fmt.Printf("CheckSupportedResolution: Error getting supported configs: %v\n", err)
 		return false, nil, fmt.Errorf("error getting supported configurations: %v", err)
+	}
+
+	fmt.Printf("CheckSupportedResolution: Found %d supported resolutions:\n", len(configs.ResolutionsAvailable))
+	for _, res := range configs.ResolutionsAvailable {
+		fmt.Printf("- %dx%d\n", res.Width, res.Height)
 	}
 
 	// Check if the resolution is supported
@@ -361,8 +385,13 @@ func CheckSupportedResolution(c *Camera, configToken string, width, height int) 
 	for _, res := range configs.ResolutionsAvailable {
 		if res.Width == width && res.Height == height {
 			resolutionSupported = true
+			fmt.Printf("CheckSupportedResolution: Found exact match for %dx%d\n", width, height)
 			break
 		}
+	}
+
+	if !resolutionSupported {
+		fmt.Printf("CheckSupportedResolution: No exact match found for %dx%d\n", width, height)
 	}
 
 	return resolutionSupported, configs.ResolutionsAvailable, nil
@@ -384,28 +413,60 @@ func SetVideoEncoderConfiguration(
 		return fmt.Errorf("camera not connected")
 	}
 
-	fmt.Printf("SetVideoEncoderConfiguration: Setting resolution %dx%d for config %s\n", width, height, configToken)
+	fmt.Printf("\nSetVideoEncoderConfiguration: Starting configuration change for token %s\n", configToken)
+	fmt.Printf("SetVideoEncoderConfiguration: Requested resolution: %dx%d\n", width, height)
 
 	// Check if the requested resolution is supported
 	supported, resolutions, err := CheckSupportedResolution(c, configToken, width, height)
 	if err != nil {
+		fmt.Printf("SetVideoEncoderConfiguration: Error checking resolution support: %v\n", err)
 		return err
 	}
 
 	if !supported {
+		fmt.Printf("SetVideoEncoderConfiguration: Resolution %dx%d is not directly supported\n", width, height)
+		fmt.Printf("SetVideoEncoderConfiguration: Available resolutions for finding closest match:\n")
+		for _, res := range resolutions {
+			fmt.Printf("- %dx%d\n", res.Width, res.Height)
+		}
+
 		// Find the closest supported resolution
 		closestRes := FindClosestResolution(width, height, resolutions)
-		fmt.Printf("SetVideoEncoderConfiguration: Requested resolution %dx%d is not supported, using closest match %dx%d\n",
-			width, height, closestRes.Width, closestRes.Height)
+		fmt.Printf("SetVideoEncoderConfiguration: Found closest match: %dx%d\n", closestRes.Width, closestRes.Height)
+
+		// Double check that the closest resolution is actually in the supported list
+		isClosestSupported := false
+		for _, res := range resolutions {
+			if res.Width == closestRes.Width && res.Height == closestRes.Height {
+				isClosestSupported = true
+				break
+			}
+		}
+
+		if !isClosestSupported {
+			fmt.Printf("SetVideoEncoderConfiguration: WARNING - Closest resolution %dx%d is not in supported list!\n",
+				closestRes.Width, closestRes.Height)
+			return fmt.Errorf("no suitable supported resolution found")
+		}
+
 		width = closestRes.Width
 		height = closestRes.Height
+		fmt.Printf("SetVideoEncoderConfiguration: Will use resolution %dx%d\n", width, height)
 	}
 
 	// Get current config first to preserve other settings
 	currentConfig, err := GetVideoEncoderConfiguration(c, configToken)
 	if err != nil {
+		fmt.Printf("SetVideoEncoderConfiguration: Error getting current config: %v\n", err)
 		return fmt.Errorf("error getting current config: %v", err)
 	}
+
+	fmt.Printf("SetVideoEncoderConfiguration: Current configuration:\n")
+	fmt.Printf("- Resolution: %dx%d\n", currentConfig.Width, currentConfig.Height)
+	fmt.Printf("- Frame Rate: %d\n", currentConfig.FrameRate)
+	fmt.Printf("- Bit Rate: %d\n", currentConfig.BitRate)
+	fmt.Printf("- Gov Length: %d\n", currentConfig.GovLength)
+	fmt.Printf("- H264 Profile: %s\n", currentConfig.H264Profile)
 
 	// Preserve original values if not specified
 	if configName == "" {
@@ -424,7 +485,6 @@ func SetVideoEncoderConfiguration(
 		h264Profile = currentConfig.H264Profile
 	}
 
-	fmt.Printf("SetVideoEncoderConfiguration: Current config: %+v\n", currentConfig)
 	fmt.Printf("SetVideoEncoderConfiguration: New settings: width=%d height=%d frameRate=%d bitRate=%d govLength=%d profile=%s\n",
 		width, height, frameRate, bitRate, govLength, h264Profile)
 

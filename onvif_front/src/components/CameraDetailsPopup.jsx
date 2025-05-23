@@ -11,9 +11,11 @@ import {
   CircularProgress,
   Snackbar,
   Paper,
+  DialogActions,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DeleteIcon from '@mui/icons-material/Delete';
 import api from '../services/api';
 
 const CameraDetailsPopup = ({ open, onClose, camera }) => {
@@ -24,10 +26,18 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
   const [deviceInfo, setDeviceInfo] = useState(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (open && !camera.isFake) {
       loadData();
+    } else if (open && camera.isFake) {
+      // Reset states for fake camera
+      setLoading(false);
+      setError('');
+      setStreamUrl('');
+      setConfigDetails(null);
+      setDeviceInfo(null);
     }
   }, [open, camera.isFake]);
 
@@ -43,8 +53,7 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
   const handleLaunchVLC = async () => {
     setLaunching(true);
     try {
-      await api.launchVLC('active'); // Use 'active' as the profile token
-      // Don't set a success message here since the backend will provide it
+      await api.launchVLC(camera.id);
     } catch (err) {
       console.error('Failed to launch VLC:', err);
       setError('Failed to launch VLC. Is VLC installed on the server?');
@@ -53,12 +62,31 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete Camera ${camera.id}?`)) {
+      return;
+    }
+    
+    setDeleting(true);
+    try {
+      await api.deleteCamera(camera.id);
+      onClose();
+      // Force page refresh to update camera list
+      window.location.reload();
+    } catch (err) {
+      console.error('Failed to delete camera:', err);
+      setError('Failed to delete camera: ' + err.message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     setError('');
     try {
       if (!camera.isFake) {
-        const details = await api.getCameraDetailsSimple();
+        const details = await api.getCameraDetailsSimple(camera.id);
         setStreamUrl(details.streamUrl);
         setConfigDetails(details.config);
         setDeviceInfo(details.deviceInfo);
@@ -69,6 +97,28 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const renderFakeCameraInfo = () => {
+    return (
+      <Box sx={{ mt: 2 }}>
+        <Typography variant="h6" gutterBottom>Simulated Camera Information</Typography>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Camera ID: {camera.id}
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            IP Address: {camera.ip}
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Type: Simulated ONVIF Camera
+          </Typography>
+          <Alert severity="info" sx={{ mt: 2 }}>
+            This is a simulated camera. Streaming and detailed configuration are not available.
+          </Alert>
+        </Paper>
+      </Box>
+    );
   };
 
   const renderConfigDetails = () => {
@@ -126,14 +176,18 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
         fullWidth
       >
         <DialogTitle>
-          Camera Details
-          <IconButton
-            aria-label="close"
-            onClick={onClose}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">
+              Camera {camera.id} Details {camera.isFake ? '(Simulated)' : ''}
+            </Typography>
+            <IconButton
+              aria-label="close"
+              onClick={onClose}
+              size="small"
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
         </DialogTitle>
         <DialogContent>
           {loading ? (
@@ -144,33 +198,50 @@ const CameraDetailsPopup = ({ open, onClose, camera }) => {
             <Alert severity="error">{error}</Alert>
           ) : (
             <>
-              {streamUrl && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="h6" gutterBottom>Stream URL</Typography>
-                  <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="body2" sx={{ flexGrow: 1, wordBreak: 'break-all' }}>
-                      {streamUrl}
-                    </Typography>
-                    <IconButton onClick={handleCopyClick} size="small">
-                      <ContentCopyIcon />
-                    </IconButton>
-                  </Paper>
-                  <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
-                    <Button
-                      variant="contained"
-                      onClick={handleLaunchVLC}
-                      disabled={launching}
-                    >
-                      {launching ? 'Launching...' : 'Open in VLC'}
-                    </Button>
-                  </Box>
-                </Box>
+              {camera.isFake ? (
+                renderFakeCameraInfo()
+              ) : (
+                <>
+                  {streamUrl && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="h6" gutterBottom>Stream URL</Typography>
+                      <Paper sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <Typography variant="body2" sx={{ flexGrow: 1, wordBreak: 'break-all' }}>
+                          {streamUrl}
+                        </Typography>
+                        <IconButton onClick={handleCopyClick} size="small">
+                          <ContentCopyIcon />
+                        </IconButton>
+                      </Paper>
+                      <Box sx={{ mt: 2, display: 'flex', gap: 2 }}>
+                        <Button
+                          variant="contained"
+                          onClick={handleLaunchVLC}
+                          disabled={launching}
+                        >
+                          {launching ? 'Launching...' : 'Open in VLC'}
+                        </Button>
+                      </Box>
+                    </Box>
+                  )}
+                  {renderConfigDetails()}
+                  {renderDeviceInfo()}
+                </>
               )}
-              {renderConfigDetails()}
-              {renderDeviceInfo()}
             </>
           )}
         </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0 }}>
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={<DeleteIcon />}
+            onClick={handleDelete}
+            disabled={deleting}
+          >
+            {deleting ? 'Deleting...' : 'Delete Camera'}
+          </Button>
+        </DialogActions>
       </Dialog>
       <Snackbar
         open={copySuccess}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -161,15 +162,32 @@ func applyConfigHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Configuration applied successfully"))
 }
 
+// getNextCameraID returns the next available camera ID
+func getNextCameraID(cameras []Camera) string {
+	if len(cameras) == 0 {
+		return "1"
+	}
+
+	// Convert all IDs to integers and find the highest one
+	maxID := 0
+	for _, cam := range cameras {
+		if id, err := strconv.Atoi(cam.ID); err == nil {
+			if id > maxID {
+				maxID = id
+			}
+		}
+	}
+
+	// Return the next ID as a string
+	return strconv.Itoa(maxID + 1)
+}
+
 func addCameraHandler(w http.ResponseWriter, r *http.Request) {
 	var newCamera Camera
 	if err := json.NewDecoder(r.Body).Decode(&newCamera); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
-	// Generate a unique ID for the camera
-	newCamera.ID = fmt.Sprintf("%d", len(cameras)+1)
 
 	// If it's not a fake camera, try to connect to verify credentials
 	if !newCamera.IsFake {
@@ -180,26 +198,27 @@ func addCameraHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Load current cameras from the config file
-	file, err := os.ReadFile("./config/cameras.json")
-	if err != nil && !os.IsNotExist(err) {
-		http.Error(w, "Failed to read cameras configuration", http.StatusInternalServerError)
+	// Read existing cameras
+	content, err := os.ReadFile("config/cameras.json")
+	if err != nil {
+		http.Error(w, "Failed to read camera configuration", http.StatusInternalServerError)
 		return
 	}
 
 	var cameraList CameraList
-	if len(file) > 0 {
-		if err := json.Unmarshal(file, &cameraList); err != nil {
-			http.Error(w, "Failed to parse cameras configuration", http.StatusInternalServerError)
-			return
-		}
+	if err := json.Unmarshal(content, &cameraList); err != nil {
+		http.Error(w, "Failed to parse camera configuration", http.StatusInternalServerError)
+		return
 	}
+
+	// Generate the next available ID
+	newCamera.ID = getNextCameraID(cameraList.Cameras)
 
 	// Add the new camera to the list
 	cameraList.Cameras = append(cameraList.Cameras, newCamera)
 
-	// Save back to the config file
-	configFile, err := os.Create("./config/cameras.json")
+	// Create a file with proper formatting
+	configFile, err := os.Create("config/cameras.json")
 	if err != nil {
 		http.Error(w, "Failed to create camera configuration file", http.StatusInternalServerError)
 		return
@@ -467,7 +486,7 @@ func getStreamURL(w http.ResponseWriter, r *http.Request) {
 // Handler to launch VLC with a stream
 func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		ProfileToken string `json:"profileToken"`
+		CameraId string `json:"cameraId"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -475,41 +494,56 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	camera, err := getCamera()
-	if err != nil {
+	// Find the requested camera
+	var targetCamera *Camera
+	for _, cam := range cameras {
+		if cam.ID == payload.CameraId {
+			targetCamera = &cam
+			break
+		}
+	}
+
+	if targetCamera == nil {
+		http.Error(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+
+	if targetCamera.IsFake {
+		http.Error(w, "Cannot stream from simulated camera", http.StatusBadRequest)
+		return
+	}
+
+	camera := lib.NewCamera(targetCamera.IP, 80, targetCamera.Username, targetCamera.Password)
+	if err := camera.Connect(); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	var streamURI string
-	if payload.ProfileToken == "active" {
-		// Get active profile and use it
-		profileToken, _, err := lib.GetActiveProfile(camera)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get active profile: %v", err), http.StatusInternalServerError)
-			return
-		}
-		fmt.Printf("Using active profile token: %s\n", profileToken)
-		streamURI, err = lib.GetStreamURI(camera, profileToken)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get stream URI for active profile: %v", err), http.StatusInternalServerError)
-			return
-		}
-	} else {
-		// Use specified profile token
-		fmt.Printf("Using specified profile token: %s\n", payload.ProfileToken)
-		streamURI, err = lib.GetStreamURI(camera, payload.ProfileToken)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to get stream URI for profile %s: %v", payload.ProfileToken, err), http.StatusInternalServerError)
-			return
-		}
-	}
-
+	// Get active profile
+	profileToken, _, err := lib.GetActiveProfile(camera)
 	if err != nil {
-		http.Error(w, "Failed to get stream URI", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("Failed to get active profile: %v", err), http.StatusInternalServerError)
 		return
 	}
-	fmt.Printf("Got stream URI: %s\n", streamURI)
+
+	streamURI, err := lib.GetStreamURI(camera, profileToken)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get stream URI: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Add authentication credentials to the stream URL
+	parsedURL, err := url.Parse(streamURI)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse stream URI: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Add username and password to the URL
+	parsedURL.User = url.UserPassword(targetCamera.Username, targetCamera.Password)
+	authenticatedStreamURI := parsedURL.String()
+
+	fmt.Printf("Got stream URI with auth: %s\n", authenticatedStreamURI)
 
 	// Check if VLC is already running
 	vlcRunning := isVLCRunning()
@@ -527,7 +561,7 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("Attempting to %s VLC with stream...\n",
 		map[bool]string{true: "inject stream into", false: "launch"}[vlcRunning])
 
-	err = launchOrInjectVLC(streamURI)
+	err = launchOrInjectVLC(authenticatedStreamURI)
 	if err != nil {
 		// Log more details about the failure
 		fmt.Printf("Failed to handle VLC: %v\n", err)
@@ -535,7 +569,7 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("Attempting to close existing VLC instances and retry...")
 			closeVLCInstances()
 			time.Sleep(1 * time.Second)
-			err = launchNewVLCInstance(streamURI)
+			err = launchNewVLCInstance(authenticatedStreamURI)
 			if err != nil {
 				http.Error(w, fmt.Sprintf("Failed to launch new VLC instance after closing existing: %v", err), http.StatusInternalServerError)
 				return
@@ -555,7 +589,7 @@ func launchVLCWithStream(w http.ResponseWriter, r *http.Request) {
 
 	response := map[string]string{
 		"message":   actionMsg,
-		"streamUrl": streamURI,
+		"streamUrl": authenticatedStreamURI,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -927,6 +961,16 @@ func changeResolution(w http.ResponseWriter, r *http.Request) {
 			})
 			continue
 		}
+		// Add authentication credentials to the stream URL for camera 7
+		if cameraId == "7" {
+			parsedURL, err := url.Parse(streamURI)
+			if err == nil {
+				// Add username and password to the URL
+				parsedURL.User = url.UserPassword(targetCamera.Username, targetCamera.Password)
+				streamURI = parsedURL.String()
+				fmt.Printf("Added authentication to stream URL for camera 7: %s\n", streamURI)
+			}
+		}
 		// Validate the configuration
 		var errStr string
 		validationResult, err := validator.ValidateVideoConfig(streamURI, expectedConfig)
@@ -1084,30 +1128,139 @@ func changeResolutionSimple(w http.ResponseWriter, r *http.Request) {
 			cameraId, currentConfig.Width, currentConfig.Height, currentConfig.FrameRate)
 
 		// Apply the configuration changes
-		err = lib.SetVideoEncoderConfiguration(
-			camera,
-			configToken,
-			currentConfig.Name,
-			payload.Width,
-			payload.Height,
-			payload.FrameRate,
-			payload.BitRate,
-			payload.GopLength,
-			payload.H264Profile,
-		)
+		var applyErr error
+		if cameraId == "7" {
+			// Special handling for camera 7 - don't set GOP length
+			fmt.Printf("Special handling for camera 7 - not setting GOP length\n")
 
-		if err != nil {
-			fmt.Printf("Failed to set config for camera %s: %v\n", cameraId, err)
+			// Attempt #1: Try using the existing GOP length
+			applyErr = lib.SetVideoEncoderConfiguration(
+				camera,
+				configToken,
+				currentConfig.Name,
+				payload.Width,
+				payload.Height,
+				payload.FrameRate,
+				payload.BitRate,
+				currentConfig.GovLength, // Use existing GOP length
+				payload.H264Profile,
+			)
+
+			if applyErr != nil {
+				fmt.Printf("Attempt #1 failed for camera 7: %v\n", applyErr)
+
+				// Attempt #2: Try setting only resolution and framerate
+				fmt.Printf("Trying second approach with minimal parameters...\n")
+				applyErr = lib.SetVideoEncoderConfiguration(
+					camera,
+					configToken,
+					currentConfig.Name,
+					payload.Width,
+					payload.Height,
+					payload.FrameRate,
+					currentConfig.BitRate,     // Use existing bitrate
+					currentConfig.GovLength,   // Use existing GOP length
+					currentConfig.H264Profile, // Use existing profile
+				)
+
+				if applyErr != nil {
+					fmt.Printf("Attempt #2 failed for camera 7: %v\n", applyErr)
+
+					// Attempt #3: Try getting "Profile_2" instead
+					profileDetails, profileErr := lib.GetProfileDetails(camera)
+					if profileErr == nil {
+						fmt.Printf("Got profile details with %d profiles\n",
+							len(profileDetails.Body.GetProfilesResponse.Profiles))
+
+						// Try to find a profile containing "Profile_2"
+						for _, profile := range profileDetails.Body.GetProfilesResponse.Profiles {
+							if strings.Contains(profile.Token, "Profile_2") {
+								fmt.Printf("Found Profile_2, trying with token: %s\n", profile.Token)
+
+								// Get the active profile's config token
+								alternateProfile, alternateConfig, err := lib.GetActiveProfile(camera)
+								if err != nil {
+									fmt.Printf("Failed to get config token: %v\n", err)
+									continue
+								}
+
+								fmt.Printf("Using profile token %s with config token %s\n",
+									alternateProfile, alternateConfig)
+
+								// Try setting configuration on the alternate profile
+								applyErr = lib.SetVideoEncoderConfiguration(
+									camera,
+									alternateConfig,
+									currentConfig.Name,
+									payload.Width,
+									payload.Height,
+									payload.FrameRate,
+									currentConfig.BitRate,     // Use existing bitrate
+									currentConfig.GovLength,   // Use existing GOP length
+									currentConfig.H264Profile, // Use existing profile
+								)
+
+								if applyErr == nil {
+									fmt.Printf("Successfully set configuration on alternate profile!\n")
+									configToken = alternateConfig   // Update token for validation
+									profileToken = alternateProfile // Update for stream URL
+								} else {
+									fmt.Printf("Alternate profile attempt failed: %v\n", applyErr)
+								}
+								break
+							}
+						}
+					}
+				}
+			}
+		} else {
+			// Regular handling for other cameras
+			applyErr = lib.SetVideoEncoderConfiguration(
+				camera,
+				configToken,
+				currentConfig.Name,
+				payload.Width,
+				payload.Height,
+				payload.FrameRate,
+				payload.BitRate,
+				payload.GopLength,
+				payload.H264Profile,
+			)
+		}
+
+		if applyErr != nil {
+			fmt.Printf("Failed to set config for camera %s: %v\n", cameraId, applyErr)
 			results = append(results, UpdateResult{
 				CameraId:         cameraId,
 				Success:          false,
-				Error:            fmt.Sprintf("Failed to set config: %v", err),
+				Error:            fmt.Sprintf("Failed to set config: %v", applyErr),
 				ValidationResult: nil,
 			})
 			continue
 		}
 
 		fmt.Printf("Successfully applied config to camera %s\n", cameraId)
+
+		// Verify that the configuration was actually applied by reading it back
+		if cameraId == "7" {
+			time.Sleep(5 * time.Second)
+			verifyConfig, verifyErr := lib.GetVideoEncoderConfiguration(camera, configToken)
+			if verifyErr != nil {
+				fmt.Printf("Warning: Could not verify camera 7 configuration: %v\n", verifyErr)
+			} else {
+				fmt.Printf("Camera 7 post-change config: %dx%d @ %dfps (GOV length: %d)\n",
+					verifyConfig.Width, verifyConfig.Height, verifyConfig.FrameRate, verifyConfig.GovLength)
+				if verifyConfig.Width != payload.Width || verifyConfig.Height != payload.Height {
+					fmt.Printf("Warning: Camera 7 config does not match requested resolution!\n")
+				}
+			}
+		}
+
+		// Add special handling for camera 7 - longer delay to ensure config is applied
+		if cameraId == "7" {
+			fmt.Printf("Adding extended delay for camera 7 to ensure configuration is applied...\n")
+			time.Sleep(10 * time.Second)
+		}
 
 		// Get the stream URL for validation
 		streamURI, err := lib.GetStreamURI(camera, profileToken)
@@ -1119,6 +1272,17 @@ func changeResolutionSimple(w http.ResponseWriter, r *http.Request) {
 				ValidationResult: nil,
 			})
 			continue
+		}
+
+		// Add authentication credentials to the stream URL for camera 7
+		if cameraId == "7" {
+			parsedURL, err := url.Parse(streamURI)
+			if err == nil {
+				// Add username and password to the URL
+				parsedURL.User = url.UserPassword(targetCamera.Username, targetCamera.Password)
+				streamURI = parsedURL.String()
+				fmt.Printf("Added authentication to stream URL for camera 7: %s\n", streamURI)
+			}
 		}
 
 		// Validate the configuration
@@ -1260,8 +1424,33 @@ func getDeviceInfo(w http.ResponseWriter, r *http.Request) {
 
 // Handler to get camera details using active profile and config
 func getCameraDetailsSimple(w http.ResponseWriter, r *http.Request) {
-	camera, err := getCamera()
-	if err != nil {
+	cameraId := r.URL.Query().Get("cameraId")
+	if cameraId == "" {
+		http.Error(w, "Missing cameraId parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Find the requested camera
+	var targetCamera *Camera
+	for _, cam := range cameras {
+		if cam.ID == cameraId {
+			targetCamera = &cam
+			break
+		}
+	}
+
+	if targetCamera == nil {
+		http.Error(w, "Camera not found", http.StatusNotFound)
+		return
+	}
+
+	if targetCamera.IsFake {
+		http.Error(w, "Cannot get details for simulated camera", http.StatusBadRequest)
+		return
+	}
+
+	camera := lib.NewCamera(targetCamera.IP, 80, targetCamera.Username, targetCamera.Password)
+	if err := camera.Connect(); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to connect to camera: %v", err), http.StatusInternalServerError)
 		return
 	}

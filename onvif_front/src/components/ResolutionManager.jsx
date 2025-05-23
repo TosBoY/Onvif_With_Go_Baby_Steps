@@ -89,8 +89,15 @@ const ResolutionManager = ({ selectedCameras }) => {
   };
 
   return (
-    <Box sx={{ mt: 2 }}>
-      <Box sx={{ mb: 2 }}>
+    <Box sx={{ 
+      mt: 2,
+      width: '100%',
+      maxWidth: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      '& > *': { width: '100%', maxWidth: '100%' }
+    }}>
+      <Box sx={{ mb: 2, width: '100%', maxWidth: '100%' }}>
         <FormControl fullWidth sx={{ mb: 2 }}>
           <InputLabel id="resolution-select-label">Resolution</InputLabel>
           <Select
@@ -131,21 +138,25 @@ const ResolutionManager = ({ selectedCameras }) => {
         </Button>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }}>
-          {error}
-        </Alert>
-      )}
-      
-      {success && (
-        <Alert severity="success" sx={{ mb: 2 }}>
-          {success}
-        </Alert>
-      )}
+      <Box sx={{ width: '100%', maxWidth: '100%' }}>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        
+        {success && (
+          <Alert severity="success" sx={{ mb: 2 }}>
+            {success}
+          </Alert>
+        )}
 
-      {validationResults.length > 0 && (
-        <ValidationResultDisplay results={validationResults} />
-      )}
+        {validationResults.length > 0 && (
+          <Box sx={{ width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+            <ValidationResultDisplay results={validationResults} />
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 };

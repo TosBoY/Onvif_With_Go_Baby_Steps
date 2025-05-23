@@ -20,11 +20,20 @@ type FFProbeStream struct {
 	RFrameRate   string `json:"r_frame_rate"`   // Real frame rate (as backup)
 	AvgFrameRate string `json:"avg_frame_rate"` // Average frame rate (preferred)
 	BitRate      string `json:"bit_rate"`       // Bit rate in bits per second
+	CodecName    string `json:"codec_name"`
 }
 
 // FFProbeResult represents the ffprobe command output structure
 type FFProbeResult struct {
 	Streams []FFProbeStream `json:"streams"`
+}
+
+// StreamInfo contains basic information about a video stream
+type StreamInfo struct {
+	Width     int
+	Height    int
+	FrameRate float64
+	Codec     string
 }
 
 // GetFFProbePath returns the path to the appropriate ffprobe binary for the current OS
@@ -183,7 +192,7 @@ func ValidateStreamConfig(streamURL string, expectedWidth, expectedHeight int, e
 			actualFrameRate, err := parseFrameRate(&stream)
 			if err != nil {
 				fmt.Printf("Failed to parse frame rate: %v\n", err)
-				return false, nil
+				return false, fmt.Errorf("failed to parse frame rate: %v", err)
 			}
 			fmt.Printf(" @ %f fps\n", actualFrameRate)
 
@@ -191,14 +200,16 @@ func ValidateStreamConfig(streamURL string, expectedWidth, expectedHeight int, e
 			if stream.Width != expectedWidth || stream.Height != expectedHeight {
 				fmt.Printf("Resolution mismatch: got %dx%d, expected %dx%d\n",
 					stream.Width, stream.Height, expectedWidth, expectedHeight)
-				return false, nil
+				return false, fmt.Errorf("resolution mismatch: got %dx%d, expected %dx%d @ %.1f fps",
+					stream.Width, stream.Height, expectedWidth, expectedHeight, actualFrameRate)
 			}
 
 			// Check frame rate with some tolerance (0.1)
 			if math.Abs(actualFrameRate-expectedFrameRate) > 0.1 {
 				fmt.Printf("Frame rate mismatch: got %f, expected %f\n",
 					actualFrameRate, expectedFrameRate)
-				return false, nil
+				return false, fmt.Errorf("frame rate mismatch: got %dx%d @ %.1f fps, expected %dx%d @ %.1f fps",
+					stream.Width, stream.Height, actualFrameRate, expectedWidth, expectedHeight, expectedFrameRate)
 			}
 
 			fmt.Println("Stream validation successful")
@@ -245,4 +256,82 @@ func evaluateFrameRateExpression(expr string) (float64, error) {
 	}
 
 	return num / den, nil
+}
+
+// GetStreamInfo retrieves basic stream information using ffprobe
+func GetStreamInfo(streamURL string) (*StreamInfo, error) {
+	ffprobePath, err := GetFFProbePath()
+	if err != nil {
+		fmt.Printf("FFprobe path error: %v\n", err)
+		return nil, fmt.Errorf("failed to get ffprobe: %v", err)
+	}
+
+	// Ensure ffprobe is executable
+	if err := EnsureFFProbeExecutable(); err != nil {
+		fmt.Printf("FFprobe executable check failed: %v\n", err)
+		return nil, fmt.Errorf("ffprobe executable check failed: %v", err)
+	}
+
+	fmt.Printf("Getting stream info for %s with ffprobe at %s\n", streamURL, ffprobePath)
+
+	// Run ffprobe command
+	cmd := exec.Command(ffprobePath,
+		"-v", "quiet",
+		"-print_format", "json",
+		"-show_streams",
+		"-select_streams", "v:0", // Only select the video stream (index 0)
+		streamURL)
+
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			fmt.Printf("FFprobe stderr: %s\n", string(exitErr.Stderr))
+		}
+		fmt.Printf("FFprobe execution failed: %v\n", err)
+		return nil, fmt.Errorf("stream info failed: %v", err)
+	}
+
+	if len(output) == 0 {
+		fmt.Println("FFprobe returned empty output")
+		return nil, fmt.Errorf("ffprobe returned no data")
+	}
+
+	// Parse the JSON output
+	var result FFProbeResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		fmt.Printf("Failed to parse FFprobe JSON output: %v\nOutput was: %s\n", err, string(output))
+		return nil, fmt.Errorf("failed to parse ffprobe output: %v", err)
+	}
+
+	if len(result.Streams) == 0 {
+		fmt.Println("No streams found in FFprobe output")
+		return nil, fmt.Errorf("no streams found in video")
+	}
+
+	// Find the video stream
+	for _, stream := range result.Streams {
+		if stream.CodecType == "video" {
+			// Parse frame rate
+			actualFrameRate, err := parseFrameRate(&stream)
+			if err != nil {
+				fmt.Printf("Failed to parse frame rate: %v\n", err)
+				actualFrameRate = 0
+			}
+
+			streamInfo := &StreamInfo{
+				Width:     stream.Width,
+				Height:    stream.Height,
+				FrameRate: actualFrameRate,
+				Codec:     stream.CodecName,
+			}
+
+			fmt.Printf("Found video stream: %dx%d @ %.2f fps, codec: %s\n",
+				streamInfo.Width, streamInfo.Height, streamInfo.FrameRate, streamInfo.Codec)
+
+			return streamInfo, nil
+		}
+	}
+
+	fmt.Println("No video stream found")
+	return nil, fmt.Errorf("no video stream found")
 }

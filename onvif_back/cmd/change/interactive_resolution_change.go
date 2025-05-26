@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	lib "onvif_test2/lib"
+	lib "onvif_back/lib"
 )
 
 // Camera connection details

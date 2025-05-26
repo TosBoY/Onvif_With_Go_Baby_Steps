@@ -1,6 +1,7 @@
 # Ignore specific folders
 backup/
-onvif_test/
+onvif_back/
+test/
 /ffprobe/*
 !ffprobe/.gitkeep
 

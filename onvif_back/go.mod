@@ -1,4 +1,4 @@
-module onvif_test2
+module onvif_back
 
 go 1.23.0
 
@@ -8,6 +8,7 @@ require (
 	github.com/gorilla/handlers v1.5.2
 	github.com/gorilla/mux v1.8.1
 	github.com/use-go/onvif v0.0.9
+	github.com/videonext/onvif v0.0.0-20250201124620-6da7ff2620eb
 )
 
 require (

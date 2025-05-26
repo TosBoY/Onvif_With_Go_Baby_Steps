@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	lib "onvif_test2/lib"
+	lib "onvif_back/lib"
 )
 
 // Default camera connection details

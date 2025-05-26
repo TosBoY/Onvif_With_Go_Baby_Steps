@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	lib "onvif_test2/lib"
+	lib "onvif_back/lib"
 	"os"
 )
 

@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	lib "onvif_test2/lib"
-	"onvif_test2/lib/validator"
+	lib "onvif_back/lib"
+	"onvif_back/lib/validator"
 
 	"github.com/use-go/onvif/device"
 

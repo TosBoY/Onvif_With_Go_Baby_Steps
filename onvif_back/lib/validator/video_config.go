@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	lib "onvif_test2/lib"
+	lib "onvif_back/lib"
 )
 
 type ValidationResult struct {

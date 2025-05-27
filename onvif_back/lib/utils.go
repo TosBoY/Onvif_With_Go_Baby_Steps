@@ -11,9 +11,11 @@ import (
 
 // ContainsFault checks if an XML response contains a SOAP fault
 func ContainsFault(xmlData []byte) bool {
-	// Simple string check for fault element
-	return bytes.Contains(xmlData, []byte("<Fault>")) || bytes.Contains(xmlData, []byte("<fault>")) ||
-		bytes.Contains(xmlData, []byte("<soap:Fault>")) || bytes.Contains(xmlData, []byte("<s:Fault>"))
+	return bytes.Contains(xmlData, []byte("<Fault>")) ||
+		bytes.Contains(xmlData, []byte("<fault>")) ||
+		bytes.Contains(xmlData, []byte("<soap:Fault>")) ||
+		bytes.Contains(xmlData, []byte("<s:Fault>")) ||
+		bytes.Contains(xmlData, []byte("<env:Fault>")) // ← ADD THIS
 }
 
 // extractFaultString extracts the fault string from a SOAP fault response

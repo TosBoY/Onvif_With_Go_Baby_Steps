@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	cameraIP   = "192.168.1.31"
+	cameraIP   = "192.168.1.30"
 	username   = "admin"
 	password   = "Admin123"
 	mediaXAddr = "http://" + cameraIP + "/onvif/media_service"

@@ -5,7 +5,6 @@ import (
 	"math"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	lib "onvif_back/lib"
@@ -25,61 +24,6 @@ type ValidationResult struct {
 
 // ValidateVideoConfig checks if the actual stream parameters match the expected configuration
 func ValidateVideoConfig(streamURL string, expectedConfig VideoConfig) (*ValidationResult, error) {
-	// Special handling for camera 7 based on URL (IP 192.168.1.31)
-	if strings.Contains(streamURL, "192.168.1.31") {
-		fmt.Printf("Special handling for camera 7 (IP 192.168.1.31)\n")
-
-		// Add extra delay for camera 7
-		time.Sleep(5 * time.Second)
-
-		// Try to actually get stream info from camera 7
-		actualInfo, err := lib.GetStreamInfo(streamURL)
-		if err == nil && actualInfo != nil {
-			// We got actual stream info, check if it matches expected values
-			result := &ValidationResult{
-				ActualWidth:    actualInfo.Width,
-				ActualHeight:   actualInfo.Height,
-				ActualFPS:      actualInfo.FrameRate,
-				ExpectedWidth:  expectedConfig.Width,
-				ExpectedHeight: expectedConfig.Height,
-				ExpectedFPS:    float64(expectedConfig.FrameRate),
-			}
-
-			// Check if resolution matches what we expected
-			if result.ActualWidth == result.ExpectedWidth &&
-				result.ActualHeight == result.ExpectedHeight {
-				result.IsValid = true
-				result.Message = "Stream configuration matches expected values"
-			} else {
-				result.IsValid = false
-				result.Message = "Camera 7 actual resolution doesn't match expected values"
-				result.Error = fmt.Sprintf("Resolution mismatch: got %dx%d, expected %dx%d",
-					result.ActualWidth, result.ActualHeight, result.ExpectedWidth, result.ExpectedHeight)
-			}
-
-			fmt.Printf("Camera 7 validation result: %+v\n", result)
-			return result, nil
-		}
-
-		// If we couldn't get actual info, log the error but continue with default values
-		fmt.Printf("Could not get actual stream info for camera 7, err: %v\n", err)
-
-		// Create a pre-filled result indicating we don't know the actual values
-		result := &ValidationResult{
-			IsValid:        false,
-			Message:        "Could not verify camera 7 configuration",
-			ActualWidth:    0,
-			ActualHeight:   0,
-			ActualFPS:      0,
-			ExpectedWidth:  expectedConfig.Width,
-			ExpectedHeight: expectedConfig.Height,
-			ExpectedFPS:    float64(expectedConfig.FrameRate),
-			Error:          "Could not verify if configuration was applied",
-		}
-
-		return result, nil
-	}
-
 	// Give the camera a moment to apply the new configuration
 	time.Sleep(2 * time.Second)
 

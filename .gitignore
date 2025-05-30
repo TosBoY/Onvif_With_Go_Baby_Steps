@@ -1,6 +1,6 @@
 # Ignore specific folders
-backup/
-test/
+info/backup
+tests/
 ffprobe/
 
 # Go backend
@@ -63,6 +63,7 @@ Thumbs.db
 
 # # Inclusions
 # !/ffprobe/ffprobe.exe
+!main_back\internal\ffprobe
 
 # Others
 todolists.txt

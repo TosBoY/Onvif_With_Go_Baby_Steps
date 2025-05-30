@@ -1,7 +1,7 @@
 # Ignore specific folders
-backup/
-test/
-# ffprobe/
+info/backup
+tests/
+ffprobe/
 
 # Go backend
 /onvif_back/vendor/
@@ -62,7 +62,8 @@ ehthumbs.db
 Thumbs.db
 
 # # Inclusions
-!/ffprobe/ffprobe.exe
+# !/ffprobe/ffprobe.exe
+!main_back\internal\ffprobe
 
 # Others
 todolists.txt

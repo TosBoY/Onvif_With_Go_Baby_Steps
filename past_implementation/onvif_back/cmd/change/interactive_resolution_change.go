@@ -2,9 +2,7 @@ package main
 
 import (
 	"bufio"
-	"encoding/xml"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"os"
@@ -23,7 +21,7 @@ const (
 	// username = "admin"
 	// password = "admin123"
 
-	cameraIP = "192.168.1.31"
+	cameraIP = "192.168.1.30"
 	username = "admin"
 	password = "Admin123"
 )
@@ -284,7 +282,7 @@ func setVideoEncoderResolutionAndFPS(
 		height,
 		frameRate,
 		bitRate,
-		0, // Try with 0 GovLength
+		frameRate, // Same GovLength as frameRate
 		currentConfig.H264Profile,
 	)
 
@@ -318,79 +316,79 @@ func setVideoEncoderResolutionAndFPS(
 	}
 	fmt.Println("Method 1 Failed or Did Not Update Configuration Correctly.")
 
-	// ==== METHOD 2: Minimal configuration with separate H264 section (omits GovLength) ====
-	fmt.Println("\n==== METHOD 2: Minimal configuration with direct CallMethod (omits GovLength) ====")
-	type minimalResConfig struct {
-		XMLName            xml.Name `xml:"http://www.onvif.org/ver10/media/wsdl SetVideoEncoderConfiguration"`
-		ConfigurationToken string   `xml:"Configuration>token,attr"`
-		Resolution         struct {
-			Width  int `xml:"Width,omitempty"`
-			Height int `xml:"Height,omitempty"`
-		} `xml:"Configuration>Resolution"`
-		RateControl struct {
-			FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
-			BitrateLimit   int `xml:"BitrateLimit,omitempty"`
-		} `xml:"Configuration>RateControl"`
-		ForcePersistence bool `xml:"ForcePersistence"`
-	}
+	// // ==== METHOD 2: Minimal configuration with separate H264 section (omits GovLength) ====
+	// fmt.Println("\n==== METHOD 2: Minimal configuration with direct CallMethod (omits GovLength) ====")
+	// type minimalResConfig struct {
+	// 	XMLName            xml.Name `xml:"http://www.onvif.org/ver10/media/wsdl SetVideoEncoderConfiguration"`
+	// 	ConfigurationToken string   `xml:"Configuration>token,attr"`
+	// 	Resolution         struct {
+	// 		Width  int `xml:"Width,omitempty"`
+	// 		Height int `xml:"Height,omitempty"`
+	// 	} `xml:"Configuration>Resolution"`
+	// 	RateControl struct {
+	// 		FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
+	// 		BitrateLimit   int `xml:"BitrateLimit,omitempty"`
+	// 	} `xml:"Configuration>RateControl"`
+	// 	ForcePersistence bool `xml:"ForcePersistence"`
+	// }
 
-	method2Config := minimalResConfig{
-		ConfigurationToken: token,
-		Resolution: struct {
-			Width  int `xml:"Width,omitempty"`
-			Height int `xml:"Height,omitempty"`
-		}{
-			Width:  width,
-			Height: height,
-		},
-		RateControl: struct {
-			FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
-			BitrateLimit   int `xml:"BitrateLimit,omitempty"`
-		}{
-			FrameRateLimit: frameRate,
-			BitrateLimit:   bitRate,
-		},
-		ForcePersistence: true,
-	}
+	// method2Config := minimalResConfig{
+	// 	ConfigurationToken: token,
+	// 	Resolution: struct {
+	// 		Width  int `xml:"Width,omitempty"`
+	// 		Height int `xml:"Height,omitempty"`
+	// 	}{
+	// 		Width:  width,
+	// 		Height: height,
+	// 	},
+	// 	RateControl: struct {
+	// 		FrameRateLimit int `xml:"FrameRateLimit,omitempty"`
+	// 		BitrateLimit   int `xml:"BitrateLimit,omitempty"`
+	// 	}{
+	// 		FrameRateLimit: frameRate,
+	// 		BitrateLimit:   bitRate,
+	// 	},
+	// 	ForcePersistence: true,
+	// }
 
-	xmlData, _ := xml.MarshalIndent(method2Config, "", "  ")
-	fmt.Printf("Method 2 XML Request (omitting GovLength):\n%s\n", string(xmlData))
+	// xmlData, _ := xml.MarshalIndent(method2Config, "", "  ")
+	// fmt.Printf("Method 2 XML Request (omitting GovLength):\n%s\n", string(xmlData))
 
-	resp, err := camera.GetDevice().CallMethod(method2Config)
-	if err != nil {
-		fmt.Printf("Method 2 CallMethod failed: %v\n", err)
-		if resp != nil && resp.Body != nil {
-			responseData, readErr := io.ReadAll(resp.Body)
-			if readErr == nil {
-				fmt.Printf("Method 2 error response body:\n%s\n", string(responseData))
-			} else {
-				fmt.Printf("Method 2 failed to read error response body: %v\n", readErr)
-			}
-			resp.Body.Close()
-		}
-	} else {
-		fmt.Println("Method 2 CallMethod returned no error.")
-		if resp != nil && resp.Body != nil {
-			responseData, readErr := io.ReadAll(resp.Body)
-			if readErr == nil {
-				fmt.Printf("Method 2 success response body:\n%s\n", string(responseData))
-			} else {
-				fmt.Printf("Method 2 failed to read success response body: %v\n", readErr)
-			}
-			resp.Body.Close()
-		}
-	}
+	// resp, err := camera.GetDevice().CallMethod(method2Config)
+	// if err != nil {
+	// 	fmt.Printf("Method 2 CallMethod failed: %v\n", err)
+	// 	if resp != nil && resp.Body != nil {
+	// 		responseData, readErr := io.ReadAll(resp.Body)
+	// 		if readErr == nil {
+	// 			fmt.Printf("Method 2 error response body:\n%s\n", string(responseData))
+	// 		} else {
+	// 			fmt.Printf("Method 2 failed to read error response body: %v\n", readErr)
+	// 		}
+	// 		resp.Body.Close()
+	// 	}
+	// } else {
+	// 	fmt.Println("Method 2 CallMethod returned no error.")
+	// 	if resp != nil && resp.Body != nil {
+	// 		responseData, readErr := io.ReadAll(resp.Body)
+	// 		if readErr == nil {
+	// 			fmt.Printf("Method 2 success response body:\n%s\n", string(responseData))
+	// 		} else {
+	// 			fmt.Printf("Method 2 failed to read success response body: %v\n", readErr)
+	// 		}
+	// 		resp.Body.Close()
+	// 	}
+	// }
 
-	// Verify Method 2
-	success, verifyErr = verifyChanges()
-	if verifyErr != nil {
-		fmt.Printf("Error during Method 2 verification: %v\n", verifyErr)
-	}
-	if success {
-		fmt.Println("Method 2 Succeeded and Verified.")
-		return nil
-	}
-	fmt.Println("Method 2 Failed or Did Not Update Configuration Correctly.")
+	// // Verify Method 2
+	// success, verifyErr = verifyChanges()
+	// if verifyErr != nil {
+	// 	fmt.Printf("Error during Method 2 verification: %v\n", verifyErr)
+	// }
+	// if success {
+	// 	fmt.Println("Method 2 Succeeded and Verified.")
+	// 	return nil
+	// }
+	// fmt.Println("Method 2 Failed or Did Not Update Configuration Correctly.")
 
 	return fmt.Errorf("all methods failed to update resolution and/or framerate to %dx%d @%dfps", width, height, frameRate)
 }

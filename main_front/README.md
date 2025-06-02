@@ -1,12 +1,53 @@
-# React + Vite
+# ONVIF Camera Management Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern React-based frontend for managing ONVIF cameras with a clean Material-UI interface.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 📹 View and manage ONVIF cameras
+- ⚙️ Configure camera settings (resolution, FPS)
+- 🎨 Modern Material-UI design
+- 📱 Responsive layout
+- 🔄 Real-time configuration updates
 
-## Expanding the ESLint configuration
+## Prerequisites
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- Node.js (v16 or higher)
+- npm or yarn
+- Backend server running on port 8090
+
+## Installation
+
+1. Install dependencies:
+```bash
+npm install
+```
+
+2. Start the development server:
+```bash
+npm run dev
+```
+
+3. Open your browser and navigate to `http://localhost:5173`
+
+## Backend Integration
+
+This frontend is designed to work with the Go backend server. Make sure the backend is running on `http://localhost:8090` before using the application.
+
+To start the backend:
+```bash
+cd ../main_back
+go run cmd/backend/main.go
+```
+
+## Configuration
+
+The frontend expects the backend to be running on `http://localhost:8090`. You can modify this by creating a `.env.local` file:
+
+```
+VITE_API_BASE_URL=http://your-backend-url
+```
+
+## Troubleshooting
+
+If you encounter issues connecting to the backend, please refer to the [Troubleshooting Guide](./TROUBLESHOOTING.md).

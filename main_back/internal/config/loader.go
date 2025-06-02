@@ -25,8 +25,8 @@ func LoadCameraList() ([]models.Camera, error) {
 	execDir := filepath.Dir(execPath)
 
 	// Construct the path to cameras.json relative to the executable directory
-	// Assuming executable is in main_back/ and cameras.json is in main_back/config/
-	configPath := filepath.Join(execDir, "config", "cameras.json")
+	// Corrected path: go up two directories from the executable's location to reach the project root relative to the config folder
+	configPath := filepath.Join(execDir, "..", "..", "config", "cameras.json")
 
 	// Read the JSON file
 	data, err := os.ReadFile(configPath)

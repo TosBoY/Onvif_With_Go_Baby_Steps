@@ -1,73 +1,50 @@
-import { useState, useEffect } from 'react';
-import {
-  Typography,
-  Paper,
-  CssBaseline,
-  ThemeProvider,
-  createTheme,
-  Box
-} from '@mui/material';
-import axios from 'axios';
-import ConfigManager from './components/ConfigManager';
-import CameraConfigDisplay from './components/CameraConfigDisplay';
-import './App.css';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { ThemeProvider, createTheme, CssBaseline, Box } from '@mui/material';
+import Header from './components/Header';
+import Dashboard from './pages/Dashboard';
+import SimpleDashboard from './pages/SimpleDashboard';
+import TestDashboard from './components/TestDashboard';
+import DebugDashboard from './components/DebugDashboard';
+import './App.css'
 
-const darkTheme = createTheme({
+// Create a theme instance
+const theme = createTheme({
   palette: {
-    mode: 'dark',
-    primary: { main: '#90caf9' },
-    secondary: { main: '#ce93d8' },
-    background: {
-      default: '#121212',
-      paper: '#1e1e1e'
+    primary: {
+      main: '#2c3e50',
     },
+    secondary: {
+      main: '#3498db',
+    },
+    success: {
+      main: '#2ecc71',
+    },
+    warning: {
+      main: '#f39c12',
+    },
+    error: {
+      main: '#e74c3c',
+    }
   },
 });
 
 function App() {
-  const [cameraList, setCameraList] = useState([]);
-  const [selectedCameras, setSelectedCameras] = useState([]);
-
-  useEffect(() => {
-    axios.get('http://localhost:8080/api/cameras') // Adjust backend URL as needed
-      .then(res => setCameraList(res.data))
-      .catch(err => console.error('Error fetching camera list:', err));
-  }, []);
-
-  const handleCameraSelectionChange = (newSelection) => {
-    setSelectedCameras(newSelection);
-  };
-
   return (
-    <ThemeProvider theme={darkTheme}>
+    <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ width: '100%', maxWidth: '100vw', minHeight: '100vh', p: 4, backgroundColor: 'background.default', overflow: 'hidden' }}>
-        <Typography variant="h4" gutterBottom align="center">
-          ONVIF Camera Control
-        </Typography>
-        <Box sx={{ display: 'flex', width: '100%', maxWidth: '1300px', mx: 'auto', gap: 3, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
-          <Box sx={{ width: { xs: '100%', md: '550px' }, flexShrink: 0, flexGrow: 0 }}>
-            <Paper elevation={3} sx={{ p: 2, height: '100%', overflow: 'hidden' }}>
-              <Typography variant="h5" component="h2" gutterBottom>
-                Camera Settings
-              </Typography>
-              <ConfigManager selectedCameras={selectedCameras} />
-            </Paper>
-          </Box>
-          <Box sx={{ width: { xs: '100%', md: '550px' }, flexShrink: 0, flexGrow: 0 }}>
-            <Paper elevation={3} sx={{ p: 2, height: '100%', overflow: 'hidden' }}>
-              <Typography variant="h5" component="h2" gutterBottom>
-                Camera List
-              </Typography>
-              <CameraConfigDisplay
-                cameraList={cameraList}
-                selectedCameras={selectedCameras}
-                onCameraSelectionChange={handleCameraSelectionChange}
-              />
-            </Paper>
+      <Router>
+        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Header />
+          <Box component="main" sx={{ flexGrow: 1, py: 3 }}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/debug" element={<DebugDashboard />} />
+              <Route path="/test" element={<TestDashboard />} />
+              <Route path="/simple" element={<SimpleDashboard />} />
+            </Routes>
           </Box>
         </Box>
-      </Box>
+      </Router>
     </ThemeProvider>
   );
 }

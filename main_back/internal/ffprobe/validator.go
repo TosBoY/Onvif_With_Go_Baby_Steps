@@ -31,22 +31,17 @@ type FFProbeResult struct {
 // ValidateStream runs ffprobe using an OS-specific binary from a relative path and checks if the actual stream config matches the expected one.
 // It uses a path relative to the executable and incorporates parsing logic from the previous implementation.
 func ValidateStream(rtspURL string, expected models.EncoderConfig) (bool, error) {
-	// Determine the executable directory
-	execPath, err := os.Executable()
+	workingDir, err := os.Getwd()
 	if err != nil {
-		return false, fmt.Errorf("failed to get executable path: %w", err)
+		return false, fmt.Errorf("failed to get working directory: %w", err)
 	}
-	execDir := filepath.Dir(execPath)
 
-	// Base path to the ffprobe directory relative to the backend executable (assuming executable is in main_back)
-	// This navigates up one directory from main_back to the project root and then into the ffprobe folder.
-	baseFFprobeDir := filepath.Join(execDir, "..", "ffprobe")
+	// Navigate to the ffprobe directory from working directory
+	ffprobeDir := filepath.Join(workingDir, "..", "..", "ffprobe")
 
 	// Determine OS-specific ffprobe binary name
-	osName := runtime.GOOS
 	ffprobeBinaryName := ""
-
-	switch osName {
+	switch runtime.GOOS {
 	case "windows":
 		ffprobeBinaryName = "ffprobe.exe"
 	case "linux":
@@ -54,13 +49,12 @@ func ValidateStream(rtspURL string, expected models.EncoderConfig) (bool, error)
 	case "darwin":
 		ffprobeBinaryName = "ffprobe_darwin"
 	default:
-		return false, fmt.Errorf("unsupported operating system: %s", osName)
+		return false, fmt.Errorf("unsupported OS: %s", runtime.GOOS)
 	}
 
-	// Construct the full relative path to the ffprobe binary
-	ffprobePath := filepath.Join(baseFFprobeDir, ffprobeBinaryName)
+	ffprobePath := filepath.Join(ffprobeDir, ffprobeBinaryName)
 
-	// Check if the ffprobe binary exists at the constructed path
+	// Validate binary exists
 	if _, err := os.Stat(ffprobePath); os.IsNotExist(err) {
 		return false, fmt.Errorf("ffprobe binary not found at path: %s", ffprobePath)
 	}

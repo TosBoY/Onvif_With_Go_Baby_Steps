@@ -120,6 +120,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to set encoder config: %v", err), http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Successfully applied config for camera %s", input.CameraID)
 
 	streamURI, err := client.GetStreamURI(profileToken)
 	if err != nil {
@@ -143,16 +144,43 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the stream using ffprobe
 	log.Printf("Starting ffprobe validation for camera %s", input.CameraID)
-	isValid, err := ffprobe.ValidateStream(fullStreamURL, newConfig)
-	if err != nil {
-		log.Printf("FFprobe validation failed for camera %s: %v", input.CameraID, err)
-	} else if !isValid {
-		log.Printf("FFprobe validation failed for camera %s: stream mismatch", input.CameraID)
-	} else {
-		log.Printf("FFprobe validation successful for camera %s", input.CameraID)
+	validationResult, validationErr := ffprobe.ValidateStream(fullStreamURL, input.Width, input.Height, input.FPS)
+	if validationErr != nil {
+		log.Printf("FFprobe validation failed for camera %s: %v", input.CameraID, validationErr)
+		http.Error(w, fmt.Sprintf("FFprobe validation failed: %v", validationErr), http.StatusInternalServerError)
 	}
 
-	log.Printf("Successfully applied config for camera %s", input.CameraID)
+	// Prepare response with detailed validation results
+	response := map[string]interface{}{
+		"status": "configuration applied",
+		"originalRequest": map[string]interface{}{
+			"resolution": map[string]int{
+				"width":  input.Width,
+				"height": input.Height,
+			},
+			"fps": input.FPS,
+		},
+		"appliedConfig": map[string]interface{}{
+			"resolution": map[string]int{
+				"width":  newConfig.Resolution.Width,
+				"height": newConfig.Resolution.Height,
+			},
+			"fps": newConfig.FPS,
+		},
+		"resolutionAdjusted": input.Width != newConfig.Resolution.Width || input.Height != newConfig.Resolution.Height,
+	}
+
+	if validationErr != nil {
+		log.Printf("FFprobe validation error for camera %s: %v", input.CameraID, err)
+		response["validation"] = map[string]interface{}{
+			"isValid": false,
+			"error":   validationErr.Error(),
+		}
+	} else {
+		log.Printf("FFprobe validation completed for camera %s: valid=%v", input.CameraID, validationResult.IsValid)
+		response["validation"] = validationResult
+	}
+
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "configuration applied"})
+	json.NewEncoder(w).Encode(response)
 }

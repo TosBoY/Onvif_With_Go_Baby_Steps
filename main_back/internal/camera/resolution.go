@@ -7,39 +7,61 @@ import (
 
 func FindClosestResolution(target models.Resolution, available []models.Resolution) models.Resolution {
 	if len(available) == 0 {
-		return models.Resolution{} // Return zero value if no available resolutions
+		return models.Resolution{}
 	}
-
-	closestRes := available[0] // Initialize with the first available resolution
-	minDiff := float64(abs(target.Width*target.Height - closestRes.Width*closestRes.Height))
 
 	targetArea := float64(target.Width * target.Height)
 	targetRatio := float64(target.Width) / float64(target.Height)
 
+	type candidate struct {
+		resolution models.Resolution
+		areaDiff   float64
+		ratioDiff  float64
+	}
+
+	const ratioThreshold = 0.5
+
+	var candidatesWithinRatio []candidate
+	var allCandidates []candidate
+
 	for _, res := range available {
-		stdArea := float64(res.Width * res.Height)
-		diff := math.Abs(targetArea - stdArea)
+		resArea := float64(res.Width * res.Height)
+		resRatio := float64(res.Width) / float64(res.Height)
 
-		if diff < minDiff {
-			// Check aspect ratio similarity as well
-			stdRatio := float64(res.Width) / float64(res.Height)
-			ratioDiff := math.Abs(targetRatio - stdRatio)
+		areaDiff := math.Abs(targetArea - resArea)
+		ratioDiff := math.Abs(targetRatio - resRatio)
 
-			// Only update if the aspect ratio is similar enough (within 10%)
-			if ratioDiff < 0.1 || targetRatio == 0 || stdRatio == 0 {
-				minDiff = diff
-				closestRes = res
-			}
+		c := candidate{
+			resolution: res,
+			areaDiff:   areaDiff,
+			ratioDiff:  ratioDiff,
+		}
+
+		allCandidates = append(allCandidates, c)
+
+		if ratioDiff <= ratioThreshold {
+			candidatesWithinRatio = append(candidatesWithinRatio, c)
 		}
 	}
 
-	return closestRes
-}
-
-// Helper function for absolute value of int
-func abs(x int) int {
-	if x < 0 {
-		return -x
+	// Prefer closest area from candidates with acceptable aspect ratio
+	if len(candidatesWithinRatio) > 0 {
+		best := candidatesWithinRatio[0]
+		for _, c := range candidatesWithinRatio[1:] {
+			if c.areaDiff < best.areaDiff {
+				best = c
+			}
+		}
+		return best.resolution
 	}
-	return x
+
+	// If no acceptable aspect ratios, pick the one with closest ratio,
+	// and then closest area among those with similar ratio
+	best := allCandidates[0]
+	for _, c := range allCandidates[1:] {
+		if c.ratioDiff < best.ratioDiff || (c.ratioDiff == best.ratioDiff && c.areaDiff < best.areaDiff) {
+			best = c
+		}
+	}
+	return best.resolution
 }

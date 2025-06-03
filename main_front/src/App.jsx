@@ -1,3 +1,4 @@
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme, CssBaseline, Box } from '@mui/material';
 import Header from './components/Header';
@@ -7,30 +8,29 @@ import TestDashboard from './components/TestDashboard';
 import DebugDashboard from './components/DebugDashboard';
 import './App.css'
 
-// Create a theme instance
-const theme = createTheme({
+const darkTheme = createTheme({
   palette: {
+    mode: 'dark',
     primary: {
-      main: '#2c3e50',
+      main: '#90caf9',
     },
     secondary: {
-      main: '#3498db',
+      main: '#f48fb1',
     },
-    success: {
-      main: '#2ecc71',
+    background: {
+      default: '#121212',
+      paper: '#1e1e1e',
     },
-    warning: {
-      main: '#f39c12',
+    text: {
+      primary: '#ffffff',
+      secondary: '#b0bec5',
     },
-    error: {
-      main: '#e74c3c',
-    }
   },
 });
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
+    <ThemeProvider theme={darkTheme}>
       <CssBaseline />
       <Router>
         <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>

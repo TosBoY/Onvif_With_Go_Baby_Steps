@@ -10,6 +10,7 @@ import {
 import { Refresh as RefreshIcon } from '@mui/icons-material';
 import CameraCard from '../components/CameraCard';
 import CameraConfigPanel from '../components/CameraConfigPanel';
+import ValidationResults from '../components/ValidationResults'; // Add this import
 import Loading from '../components/Loading';
 import ConnectionStatus from '../components/ConnectionStatus';
 import { getCameras } from '../services/api';
@@ -20,6 +21,11 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [selectedCameras, setSelectedCameras] = useState([]);
+  
+  // Add validation state
+  const [validationResults, setValidationResults] = useState(null);
+  const [appliedConfig, setAppliedConfig] = useState(null);
+  const [configSuccess, setConfigSuccess] = useState('');
   
   console.log('Dashboard rendering with state:', { cameras, loading, error, selectedCamera, selectedCameras });
 
@@ -49,6 +55,7 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
+
   const handleSelectDeselectAll = () => {
     if (selectedCameras.length === cameras.length) {
       // Deselect all
@@ -60,6 +67,7 @@ const Dashboard = () => {
       setSelectedCamera(cameras[0]); // Set first camera as the main selected one for config
     }
   };
+
   const handleCameraSelect = (camera) => {
     // Toggle camera selection in the list
     if (selectedCameras.includes(camera.id)) {
@@ -72,6 +80,33 @@ const Dashboard = () => {
       setSelectedCameras([...selectedCameras, camera.id]);
       setSelectedCamera(camera); // Set as main selected camera for reference
     }
+  };
+  // Add function to handle configuration results
+  const handleConfigurationApplied = (result) => {
+    // Handle both single result and array of results
+    setValidationResults(result.validation);
+    setAppliedConfig(result.appliedConfig);
+    
+    // Count successful validations
+    const successCount = Array.isArray(result.validation) 
+      ? result.validation.filter(v => v.isValid).length 
+      : (result.validation?.isValid ? 1 : 0);
+    
+    const totalCount = Array.isArray(result.validation) ? result.validation.length : 1;
+    
+    setConfigSuccess(`Configuration applied successfully! ${successCount} of ${totalCount} cameras validated successfully.`);
+    
+    // Clear success message after 5 seconds
+    setTimeout(() => {
+      setConfigSuccess('');
+    }, 5000);
+  };
+
+  // Add function to clear validation results
+  const handleClearValidation = () => {
+    setValidationResults(null);
+    setAppliedConfig(null);
+    setConfigSuccess('');
   };
 
   useEffect(() => {
@@ -96,6 +131,12 @@ const Dashboard = () => {
             {error}
           </Alert>
         )}
+
+        {configSuccess && (
+          <Alert severity="success" sx={{ mb: 4 }} onClose={() => setConfigSuccess('')}>
+            {configSuccess}
+          </Alert>
+        )}
         
         <Box sx={{ 
           display: 'flex',
@@ -118,15 +159,19 @@ const Dashboard = () => {
                 height: 'fit-content',
                 minHeight: '500px'
               }}
-            >              <Typography variant="h5" component="h2" gutterBottom>
+            >
+              <Typography variant="h5" component="h2" gutterBottom>
                 Camera Settings
-              </Typography>              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Set resolution and frame rate, then apply to selected cameras.
               </Typography>
               <CameraConfigPanel 
                 selectedCamera={selectedCamera} 
                 selectedCameras={selectedCameras}
                 cameras={cameras}
+                onConfigurationApplied={handleConfigurationApplied} // Add this prop
+                onClearValidation={handleClearValidation} // Add this prop
               />
             </Paper>
           </Box>
@@ -144,13 +189,16 @@ const Dashboard = () => {
                 height: 'fit-content',
                 minHeight: '500px'
               }}
-            >              <Typography variant="h5" component="h2" gutterBottom>
+            >
+              <Typography variant="h5" component="h2" gutterBottom>
                 Camera List ({selectedCameras.length} selected)
-              </Typography>              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Select cameras to apply configuration to. Multiple cameras can be selected.
               </Typography>
               
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>                <Button
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+                <Button
                   variant="outlined"
                   onClick={handleSelectDeselectAll}
                   disabled={cameras.length === 0}
@@ -182,7 +230,8 @@ const Dashboard = () => {
               )}
               
               {!error && cameras.length > 0 && (
-                <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>                  {cameras.map((camera) => (
+                <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
+                  {cameras.map((camera) => (
                     <Box key={camera.id} sx={{ mb: 2 }}>
                       <CameraCard 
                         camera={camera} 
@@ -197,6 +246,24 @@ const Dashboard = () => {
             </Paper>
           </Box>
         </Box>
+
+        {/* Validation Results Panel - Full Width Below */}
+        {validationResults && (
+          <Box sx={{ 
+            width: '100%',
+            maxWidth: '1400px',
+            mx: 'auto',
+            mt: 3
+          }}>
+            <Paper elevation={3} sx={{ p: 3 }}>
+              <ValidationResults 
+                validation={validationResults} 
+                appliedConfig={appliedConfig}
+                onClear={handleClearValidation}
+              />
+            </Paper>
+          </Box>
+        )}
       </Box>
     </Container>
   );

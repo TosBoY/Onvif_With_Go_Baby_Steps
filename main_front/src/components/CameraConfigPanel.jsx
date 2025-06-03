@@ -224,8 +224,7 @@ const CameraConfigPanel = ({
           </Typography>
         </Alert>
       )}
-      
-      {result.message && (
+        {result.message && (
         <Alert 
           severity={result.success ? 'success' : 'error'} 
           sx={{ mt: 2 }}
@@ -234,26 +233,8 @@ const CameraConfigPanel = ({
           {result.message}
         </Alert>
       )}
-        <Box sx={{ mt: 3 }}>
-        <Typography variant="h6">Configuration Summary</Typography>
-        <Box sx={{ mt: 1, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-          <Typography variant="body1">
-            <strong>Selected Cameras:</strong> {selectedCameras.length > 0 ? selectedCameras.join(', ') : 'None selected'}
-          </Typography>
-          <Typography variant="body1">
-            <strong>Resolution:</strong> {width}×{height}
-          </Typography>
-          <Typography variant="body1">
-            <strong>Frame Rate:</strong> {fps} FPS
-          </Typography>
-          {selectedCameras.length === 0 && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Select cameras from the list to apply configuration
-            </Typography>
-          )}
-        </Box>
+        {/* Configuration controls remain, but the summary section is removed */}
       </Box>
-    </Box>
   );
 };
 

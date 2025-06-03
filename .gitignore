@@ -1,49 +1,11 @@
-# Ignore specific folders
-info/backup
-tests/
-main_back/ffprobe
-
-# Go backend
-/onvif_back/vendor/
-**/bin/
-**/debug/
-
-# Go test files
-**/*.test
-**/*.prof
-
-# Frontend
-**/node_modules/
-**/.pnp
-**/.pnp.js
-**/dist/
-**/out/
-**/.cache/
-**/.output/
-/onvif_front/.npm
-/onvif_front/.env
-/onvif_front/build/
-/onvif_front/npm-debug.log*
-/onvif_front/yarn-debug.log*
-/onvif_front/yarn-error.log*
-
-# Binary files
+# === General ===
+*.log
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 *.bin
-go.work
-
-# Log files
-/logs/
-*.log
-
-# IDE and editor folders
-.idea/
-.vscode/*
-!.vscode/extensions.json
 *.swp
 *.swo
 *.suo
@@ -51,8 +13,6 @@ go.work
 *.njsproj
 *.sln
 *.sw?
-
-# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -60,10 +20,48 @@ go.work
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# # Inclusions
-# !main_back/ffprobe/ffprobe.exe
-!main_back/internal/ffprobe
-
-# Others
 todolists.txt
+
+# === IDE/Editor ===
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# === Go Backend (main_back) ===
+main_back/ffprobe/
+main_back/cmd/test/
+main_back/config/*.bak
+main_back/internal/ffprobe/
+main_back/vendor/
+main_back/bin/
+main_back/debug/
+main_back/*.test
+main_back/*.prof
+main_back/go.work
+
+# === Frontend (main_front) ===
+main_front/node_modules/
+main_front/.pnp
+main_front/.pnp.js
+main_front/dist/
+main_front/out/
+main_front/.cache/
+main_front/.output/
+main_front/.npm
+main_front/.env
+main_front/build/
+main_front/npm-debug.log*
+main_front/yarn-debug.log*
+main_front/yarn-error.log*
+
+# === Legacy/Other Frontends ===
+onvif_front/node_modules/
+onvif_front/.env
+onvif_front/build/
+onvif_front/npm-debug.log*
+onvif_front/yarn-debug.log*
+onvif_front/yarn-error.log*
+
+# === Tests and Backups ===
+info/backup/
+tests/

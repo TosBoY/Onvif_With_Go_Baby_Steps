@@ -35,6 +35,7 @@ const ValidationResultDisplay = ({ results }) => {
         Configuration Validation Results
       </Typography>
 
+      {/* Section for Passed Cameras */}
       {validatedCameras.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Alert severity="success" sx={{ mb: 1 }}>
@@ -63,6 +64,7 @@ const ValidationResultDisplay = ({ results }) => {
         </Box>
       )}
 
+      {/* Section for Failed Cameras */}
       {invalidConfigs.length > 0 && (
         <Box sx={{ mb: 2 }}>
           <Alert severity="warning" sx={{ mb: 1 }}>
@@ -83,10 +85,7 @@ const ValidationResultDisplay = ({ results }) => {
                 {invalidConfigs.map((result) => {
                   const v = result.validationResult;
                   if (!v) return null;
-                  
-                  // Debug log for each validation result
-                  console.log(`Camera ${result.cameraId} validation:`, v);
-                  
+
                   const resolutionMatches = v.actualWidth === v.expectedWidth && v.actualHeight === v.expectedHeight;
                   const fpsMatches = Math.abs(v.actualFPS - v.expectedFPS) < 0.1;
 

@@ -59,11 +59,30 @@ export const applyConfig = async (cameraId, width, height, fps) => {
   }
 };
 
+export const launchVLC = async (cameraId) => {
+  try {
+    console.log('Launching VLC for camera:', cameraId);
+    const response = await api.post('/vlc', {
+      cameraId
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error launching VLC:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
 // Test connection to backend server
 export const testConnection = async () => {
   try {
     const response = await api.get('/cameras');
-    return { 
+    return {
       success: true,
       message: 'Connected to backend'
     };

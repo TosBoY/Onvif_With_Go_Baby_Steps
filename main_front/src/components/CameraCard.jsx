@@ -7,15 +7,34 @@ import {
   CardActions, 
   Chip,
   Box,
-  Checkbox
+  Checkbox,
+  IconButton,
+  Tooltip
 } from '@mui/material';
-import { Videocam as VideocamIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import { 
+  Videocam as VideocamIcon, 
+  Settings as SettingsIcon, 
+  PlayArrow as PlayArrowIcon 
+} from '@mui/icons-material';
+import { launchVLC } from '../services/api';
 
 const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
   const getStatusColor = () => {
     if (camera.isFake) return 'warning';
     return 'success';
-  };  if (compact) {
+  };
+  
+  const handleLaunchVLC = async (e) => {
+    e.stopPropagation(); // Prevent triggering camera selection
+    try {
+      const response = await launchVLC(camera.id);
+      console.log('VLC launched successfully:', response);
+      // Could show a success notification here
+    } catch (error) {
+      console.error('Failed to launch VLC:', error);
+      // Could show an error notification here
+    }
+  };if (compact) {
     return (      <Card sx={{ 
         display: 'flex',
         alignItems: 'center',
@@ -38,13 +57,23 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
               <Typography variant="body2" color="text.secondary">
                 {camera.ip}
               </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            </Box>            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Chip 
                 label={camera.isFake ? 'Simulation' : 'Connected'} 
                 color={getStatusColor()} 
                 size="small" 
               />
+              {!camera.isFake && (
+                <Tooltip title="Launch VLC with stream">
+                  <IconButton 
+                    color="primary" 
+                    size="small"
+                    onClick={handleLaunchVLC}
+                  >
+                    <PlayArrowIcon />
+                  </IconButton>
+                </Tooltip>
+              )}
             </Box>
           </Box>
         </CardContent>
@@ -81,14 +110,26 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
             display: 'flex', 
             justifyContent: 'space-between',
             alignItems: 'center' 
-          }}
-        >
+          }}        >
           Camera {camera.id}
-          <Chip 
-            label={camera.isFake ? 'Simulation' : 'Connected'} 
-            color={getStatusColor()} 
-            size="small" 
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Chip 
+              label={camera.isFake ? 'Simulation' : 'Connected'} 
+              color={getStatusColor()} 
+              size="small" 
+            />
+            {!camera.isFake && (
+              <Tooltip title="Launch VLC with stream">
+                <IconButton 
+                  color="primary"
+                  size="small"
+                  onClick={handleLaunchVLC}
+                >
+                  <PlayArrowIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
         </Typography>
         <Typography variant="body2" color="text.secondary">
           IP Address: {camera.ip}

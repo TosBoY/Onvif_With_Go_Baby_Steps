@@ -10,6 +10,7 @@ import (
 	"main_back/internal/camera"
 	"main_back/internal/config"
 	"main_back/internal/ffprobe"
+	"main_back/internal/vlc"
 	"main_back/pkg/models"
 
 	"github.com/gorilla/mux"
@@ -18,6 +19,7 @@ import (
 func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras", HandleGetCameras).Methods("GET")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
+	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
 }
 
 func HandleGetCameras(w http.ResponseWriter, r *http.Request) {
@@ -182,5 +184,88 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+func HandleVLC(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /vlc request")
+
+	var input struct {
+		CameraID string `json:"cameraId"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("Error decoding VLC request body: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to decode request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Launching VLC for camera ID: %s", input.CameraID)
+
+	// Get the camera client
+	client, err := camera.GetCameraClient(input.CameraID)
+	if err != nil {
+		log.Printf("Error getting camera client for %s: %v", input.CameraID, err)
+		http.Error(w, fmt.Sprintf("Camera not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	// Get active profile
+	log.Printf("Getting active profile for camera %s", input.CameraID)
+	profileTokens, _, err := camera.GetProfilesAndConfigs(client)
+	if err != nil {
+		log.Printf("Failed to get camera profiles for %s: %v", input.CameraID, err)
+		http.Error(w, fmt.Sprintf("Failed to get camera profiles: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if len(profileTokens) == 0 {
+		log.Printf("No profiles found for camera %s", input.CameraID)
+		http.Error(w, "No profiles found", http.StatusInternalServerError)
+		return
+	}
+
+	// Use the first profile token
+	profileToken := profileTokens[0]
+	log.Printf("Using profile token %s for camera %s", profileToken, input.CameraID)
+
+	// Get stream URI for the profile
+	streamURI, err := client.GetStreamURI(profileToken)
+	if err != nil {
+		log.Printf("Failed to get stream URI for camera %s: %v", input.CameraID, err)
+		http.Error(w, fmt.Sprintf("Failed to get stream URI: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Add credentials to the stream URL
+	parsedURI, err := url.Parse(streamURI)
+	if err != nil {
+		log.Printf("Failed to parse stream URI for camera %s: %v", input.CameraID, err)
+		http.Error(w, fmt.Sprintf("Failed to parse stream URI: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Add username and password to the URL
+	parsedURI.User = url.UserPassword(client.Camera.Username, client.Camera.Password)
+	authenticatedStreamURI := parsedURI.String()
+
+	log.Printf("Stream URI with auth: %s", authenticatedStreamURI)
+
+	// Launch VLC with the stream
+	message, err := vlc.LaunchVLCWithStream(authenticatedStreamURI)
+	if err != nil {
+		log.Printf("Failed to launch VLC for camera %s: %v", input.CameraID, err)
+		http.Error(w, fmt.Sprintf("Failed to launch VLC: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("VLC launched successfully for camera %s: %s", input.CameraID, message)
+
+	response := map[string]interface{}{
+		"message":   message,
+		"streamUrl": authenticatedStreamURI,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }

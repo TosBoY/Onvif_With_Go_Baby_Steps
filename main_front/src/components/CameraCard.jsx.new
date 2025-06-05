@@ -37,51 +37,50 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
     }
   };
 
-  if (compact) {      return (        <Card sx={{ 
+  if (compact) {    
+    return (      
+      <Card sx={{ 
         display: 'flex',
         alignItems: 'center',
         transition: 'all 0.2s ease-in-out',
         border: 'none',
-        minHeight: '40px',  // Increased from 32px for less thin appearance
-        maxHeight: '52px',  // Increased from 40px
-        boxShadow: '0 1px 2px rgba(0,0,0,0.12)',  // Slightly stronger shadow
-        borderRadius: 1     
-      }}>        <Box sx={{ display: 'flex', alignItems: 'center', pl: 1 }}>
+        minHeight: '36px',  // Smaller height
+        boxShadow: '0 1px 2px rgba(0,0,0,0.08)'  // Lighter shadow
+      }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', pl: 0.5 }}>
           <Checkbox
             checked={isSelected}
             onChange={() => onSelect(camera)}
             color="primary"
             size="small"
-            sx={{ p: '4px', mr: 0 }}  // Increased padding from 2px to 4px
           />
         </Box>
-        <CardContent sx={{ flexGrow: 1, py: 0.75, px: 1.5, '&:last-child': { pb: 0.75 } }}>  
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            <Box sx={{ mr: 2, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>              <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.2, fontSize: '0.875rem', m: 0, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>  
+        <CardContent sx={{ flexGrow: 1, py: 0.5, px: 1 }}>  
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.1, fontSize: '0.85rem', m: 0 }}>  
                 Camera {camera.id}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2, fontSize: '0.775rem', m: 0, mt: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>  
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.1, fontSize: '0.75rem', m: 0 }}>  
                 {camera.ip}
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, gap: 0.75 }}>              <Chip 
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>  
+              <Chip 
                 label={camera.isFake ? 'Simulation' : 'Connected'} 
                 color={getStatusColor()} 
                 size="small"
-                sx={{ 
-                  height: '20px', 
-                  '& .MuiChip-label': { px: 0.75, fontSize: '0.7rem', py: 0 },
-                  mr: camera.isFake ? 0 : 0.5
-                }}
+                sx={{ height: '18px', '& .MuiChip-label': { px: 0.75, fontSize: '0.65rem' } }}
               />
               {!camera.isFake && (
                 <Tooltip title="Launch VLC with stream">
-                  <IconButton                    color="primary" 
+                  <IconButton 
+                    color="primary" 
                     size="small"
                     onClick={handleLaunchVLC}
-                    sx={{ padding: '4px', minWidth: '24px', minHeight: '24px' }}
+                    sx={{ padding: 0.5 }}
                   >
-                    <PlayArrowIcon sx={{ fontSize: '1rem' }} />
+                    <PlayArrowIcon sx={{ fontSize: '0.9rem' }} />
                   </IconButton>
                 </Tooltip>
               )}

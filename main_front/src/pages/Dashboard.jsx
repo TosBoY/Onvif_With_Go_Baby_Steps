@@ -230,9 +230,9 @@ const Dashboard = () => {
               )}
               
               {!error && cameras.length > 0 && (
-                <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
+                <Box sx={{ maxHeight: '400px', overflow: 'auto', py: 1 }}>
                   {cameras.map((camera) => (
-                    <Box key={camera.id} sx={{ mb: 2 }}>
+                    <Box key={camera.id} sx={{ mb: 1 }}> {/* Increased margin-bottom back to 1 */}
                       <CameraCard 
                         camera={camera} 
                         isSelected={selectedCameras.includes(camera.id)}

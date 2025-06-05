@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 )
 
 type FFProbeStream struct {
@@ -77,9 +76,6 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS i
 		result.Error = fmt.Sprintf("ffprobe binary not found at path: %s", ffprobePath)
 		return result, nil
 	}
-
-	// Give the camera some time to apply settings before validation
-	time.Sleep(1 * time.Second)
 
 	cmd := exec.Command(ffprobePath,
 		"-v", "quiet",

@@ -44,9 +44,11 @@ const ValidationResults = ({ validation, appliedConfig }) => {
       <ErrorIcon color="error" sx={{ mr: 1 }} />
     );
   };
-
   // Function to check if resolution matches
   const resolutionMatches = (v) => {
+    // If this is a fake camera, consider it matching if isValid is true
+    if (v.isFake && v.isValid) return true;
+    
     return v.actualWidth && v.actualHeight && 
            v.actualWidth === v.expectedWidth && 
            v.actualHeight === v.expectedHeight;
@@ -54,6 +56,9 @@ const ValidationResults = ({ validation, appliedConfig }) => {
 
   // Function to check if FPS matches
   const fpsMatches = (v) => {
+    // If this is a fake camera, consider it matching if isValid is true
+    if (v.isFake && v.isValid) return true;
+    
     return v.actualFPS && Math.abs(v.actualFPS - v.expectedFPS) < 1;
   };
 

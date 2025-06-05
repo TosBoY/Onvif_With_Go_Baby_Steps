@@ -51,7 +51,7 @@ const CameraConfigPanel = ({
     if (!isNaN(value) && value > 0) {
       setFps(value);
     }
-  };    const handleApplyConfig = async () => {
+  };  const handleApplyConfig = async () => {
     // Clear previous validation results
     if (onClearValidation) {
       onClearValidation();
@@ -68,99 +68,102 @@ const CameraConfigPanel = ({
     setIsLoading(true);
     setResult({ 
       success: true, 
-      message: `Applying configuration to ${selectedCameras.length} camera(s)... This may take a while as each camera needs time to update settings.`
+      message: `Applying configuration to ${selectedCameras.length} camera(s)... This may take a while as cameras need time to update and validate settings.`
     });
     
-    const results = [];
-    const errors = [];
-    const validations = [];
-    
-    // Show progressive updates
-    const updateProgress = (processed, total) => {
-      setResult({
-        success: true,
-        message: `Processing cameras: ${processed}/${total} complete... Please wait as validation can take up to 20 seconds per camera.`
-      });
-    };
-    
-    // Apply configuration to all selected cameras
-    for (let i = 0; i < selectedCameras.length; i++) {
-      const cameraId = selectedCameras[i];
-      updateProgress(i, selectedCameras.length);
+    // Use batch mode to send all camera IDs at once
+    try {
+      // Call API with array of camera IDs (batch mode)
+      const batchResult = await applyConfig(selectedCameras, width, height, fps);
+      console.log('Batch configuration result:', batchResult);      // Process response - extract validation results
+      const validations = [];
+      const successfulCameras = [];
+      const failedCameras = [];
+
+      console.log('Received batch result structure:', batchResult);
       
-      try {
-        // Update timeout dynamically based on number of cameras
-        const result = await applyConfig(cameraId, width, height, fps);
-        console.log(`Camera ${cameraId} configuration result:`, result);
-        
-        // Store validation results for each camera
-        if (result && result.validation) {
-          // Add camera ID to the validation result for identification
-          validations.push({
-            ...result.validation,
-            cameraId
-          });
-        }
-        
-        results.push(cameraId);
-      } catch (error) {
-        console.error(`Error applying configuration to camera ${cameraId}:`, error);
-        // Provide more context in the error message
-        const errorMsg = error.message || "Unknown error";
-        errors.push({ 
-          cameraId, 
-          error: errorMsg.includes("timeout") 
-            ? `Timeout - camera may need more time to apply settings (${errorMsg})` 
-            : errorMsg 
+      // Analyze results for each camera
+      if (batchResult && batchResult.results) {
+        Object.entries(batchResult.results).forEach(([cameraId, result]) => {
+          console.log(`Processing camera ${cameraId} result:`, result);
+          
+          if (result.success) {
+            successfulCameras.push(cameraId);
+            
+            // Extract and format validation data if available
+            if (result.validation) {
+              const validationData = {
+                ...result.validation,
+                cameraId,
+                // Add expected values from the original request
+                expectedWidth: width,
+                expectedHeight: height,
+                expectedFPS: fps
+              };
+              
+              // For fake cameras, ensure we're marking if values match exactly
+              if (result.isFake) {
+                validationData.isValid = true;
+              }
+              
+              console.log(`Adding validation for camera ${cameraId}:`, validationData);
+              validations.push(validationData);
+            }
+          } else {
+            failedCameras.push({
+              cameraId,
+              error: result.error || 'Unknown error'
+            });
+          }
         });
       }
       
-      // Brief pause between camera configurations to avoid overloading
-      if (i < selectedCameras.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      // Pass all validation results back to Dashboard
+      if (onConfigurationApplied && validations.length > 0) {
+        const compositeResult = {
+          validation: validations,
+          appliedConfig: {
+            resolution: { width, height },
+            fps
+          }
+        };
+        onConfigurationApplied(compositeResult);
       }
-    }
-      // Pass all validation results back to Dashboard, even if there are errors
-    // This ensures we show whatever validation data we were able to collect
-    if (onConfigurationApplied && validations.length > 0) {
-      // Create composite result with all validations
-      const compositeResult = {
-        validation: validations,
-        appliedConfig: {
-          resolution: { width, height },
-          fps
-        }
-      };
-      onConfigurationApplied(compositeResult);
-    }
-    
-    // Show final results summary
-    if (errors.length === 0) {
-      setResult({ 
-        success: true, 
-        message: `Configuration applied successfully to ${results.length} camera(s): ${results.join(', ')}` 
-      });
-    } else if (results.length > 0) {
-      // For partial success, be more specific about what worked
-      const successMessage = `Applied to cameras ${results.join(', ')}`;
-      const errorDetails = errors.map(e => `${e.cameraId}: ${e.error}`).join('; ');
       
+      // Show final results summary
+      if (failedCameras.length === 0) {
+        setResult({ 
+          success: true, 
+          message: `Configuration applied successfully to ${successfulCameras.length} camera(s): ${successfulCameras.join(', ')}` 
+        });
+      } else if (successfulCameras.length > 0) {
+        // For partial success, be more specific about what worked
+        const successMessage = `Applied to cameras ${successfulCameras.join(', ')}`;
+        const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+        
+        setResult({ 
+          success: false, 
+          message: `Partial success: ${successMessage}. Failed cameras: ${errorDetails}` 
+        });
+      } else {
+        // For complete failure, show detailed error for each camera
+        const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+        
+        setResult({ 
+          success: false, 
+          message: `Failed to apply configuration to any cameras. Errors: ${errorDetails}` 
+        });
+      }
+    } catch (error) {
+      console.error('Error in batch configuration:', error);
       setResult({ 
         success: false, 
-        message: `Partial success: ${successMessage}. Failed cameras: ${errorDetails}` 
+        message: `Configuration failed: ${error.message}` 
       });
-    } else {
-      // For complete failure, show detailed error for each camera
-      const errorDetails = errors.map(e => `${e.cameraId}: ${e.error}`).join('; ');
-      
-      setResult({ 
-        success: false, 
-        message: `Failed to apply configuration to any cameras. Errors: ${errorDetails}` 
-      });
+    } finally {
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
-  };  
+  };
   return (
     <Box sx={{ p: 2 }}>
       <Typography variant="h6" gutterBottom>

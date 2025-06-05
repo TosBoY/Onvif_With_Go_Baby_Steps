@@ -15,11 +15,16 @@ import {
 import { 
   Videocam as VideocamIcon, 
   Settings as SettingsIcon, 
-  PlayArrow as PlayArrowIcon 
+  PlayArrow as PlayArrowIcon,
+  Info as InfoIcon 
 } from '@mui/icons-material';
+import { useState } from 'react';
 import { launchVLC } from '../services/api';
+import CameraInfoDialog from './CameraInfoDialog';
 
-const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
+const CameraCard = ({ camera, isSelected, onSelect, compact = false, onCameraDeleted }) => {
+  const [infoDialogOpen, setInfoDialogOpen] = useState(false);
+  
   const getStatusColor = () => {
     if (camera.isFake) return 'warning';
     return 'success';
@@ -36,8 +41,15 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
       // Could show an error notification here
     }
   };
+  
+  const handleInfoClick = (e) => {
+    e.stopPropagation(); // Prevent triggering camera selection
+    setInfoDialogOpen(true);
+  };
 
-  if (compact) {      return (        <Card sx={{ 
+  if (compact) {      
+    return (        
+      <Card sx={{ 
         display: 'flex',
         alignItems: 'center',
         transition: 'all 0.2s ease-in-out',
@@ -46,7 +58,8 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
         maxHeight: '52px',  // Increased from 40px
         boxShadow: '0 1px 2px rgba(0,0,0,0.12)',  // Slightly stronger shadow
         borderRadius: 1     
-      }}>        <Box sx={{ display: 'flex', alignItems: 'center', pl: 1 }}>
+      }}>        
+        <Box sx={{ display: 'flex', alignItems: 'center', pl: 1 }}>
           <Checkbox
             checked={isSelected}
             onChange={() => onSelect(camera)}
@@ -57,14 +70,16 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
         </Box>
         <CardContent sx={{ flexGrow: 1, py: 0.75, px: 1.5, '&:last-child': { pb: 0.75 } }}>  
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            <Box sx={{ mr: 2, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>              <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.2, fontSize: '0.875rem', m: 0, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>  
+            <Box sx={{ mr: 2, flexGrow: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>              
+              <Typography variant="subtitle1" component="div" sx={{ lineHeight: 1.2, fontSize: '0.875rem', m: 0, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>  
                 Camera {camera.id}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.2, fontSize: '0.775rem', m: 0, mt: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>  
                 {camera.ip}
               </Typography>
             </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, gap: 0.75 }}>              <Chip 
+            <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, gap: 0.75 }}>              
+              <Chip 
                 label={camera.isFake ? 'Simulation' : 'Connected'} 
                 color={getStatusColor()} 
                 size="small"
@@ -76,7 +91,8 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
               />
               {!camera.isFake && (
                 <Tooltip title="Launch VLC with stream">
-                  <IconButton                    color="primary" 
+                  <IconButton                    
+                    color="primary" 
                     size="small"
                     onClick={handleLaunchVLC}
                     sx={{ padding: '4px', minWidth: '24px', minHeight: '24px' }}
@@ -84,10 +100,26 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
                     <PlayArrowIcon sx={{ fontSize: '1rem' }} />
                   </IconButton>
                 </Tooltip>
-              )}
+              )}              <Tooltip title="Camera Info">
+                <IconButton                    
+                  color="primary" 
+                  size="small"
+                  onClick={handleInfoClick}
+                  sx={{ padding: '4px', minWidth: '24px', minHeight: '24px' }}
+                >
+                  <InfoIcon sx={{ fontSize: '1rem' }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           </Box>
         </CardContent>
+        
+        <CameraInfoDialog
+          open={infoDialogOpen}
+          onClose={() => setInfoDialogOpen(false)}
+          camera={camera}
+          onCameraDeleted={onCameraDeleted}
+        />
       </Card>
     );
   }
@@ -142,7 +174,15 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
                   <PlayArrowIcon />
                 </IconButton>
               </Tooltip>
-            )}
+            )}            <Tooltip title="Camera Info">
+              <IconButton 
+                color="primary"
+                size="small"
+                onClick={handleInfoClick}
+              >
+                <InfoIcon />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Typography>
         <Typography variant="body2" color="text.secondary">
@@ -161,6 +201,13 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
           {isSelected ? '✓ Selected' : 'Select'}
         </Button>
       </CardActions>
+      
+      <CameraInfoDialog
+        open={infoDialogOpen}
+        onClose={() => setInfoDialogOpen(false)}
+        camera={camera}
+        onCameraDeleted={onCameraDeleted}
+      />
     </Card>
   );
 };

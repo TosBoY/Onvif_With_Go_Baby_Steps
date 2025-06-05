@@ -37,15 +37,16 @@ export const getCameras = async () => {
   }
 };
 
-export const applyConfig = async (cameraId, width, height, fps) => {
+export const applyConfig = async (cameraIds, width, height, fps) => {
   try {
-    console.log('Applying config:', { cameraId, width, height, fps });
-    const response = await api.post('/apply-config', {
-      cameraId,
-      width,
-      height,
-      fps
-    });
+    // Handle both single camera ID (string) and multiple camera IDs (array)
+    const isBatchMode = Array.isArray(cameraIds);
+    const payload = isBatchMode 
+      ? { cameraIds, width, height, fps }
+      : { cameraId: cameraIds, width, height, fps };
+      
+    console.log('Applying config:', payload);
+    const response = await api.post('/apply-config', payload);
     return response.data;
   } catch (error) {
     console.error('Error applying configuration:', error);
@@ -68,6 +69,45 @@ export const launchVLC = async (cameraId) => {
     return response.data;
   } catch (error) {
     console.error('Error launching VLC:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+export const addNewCamera = async (ip, username, password, isFake = false) => {
+  try {
+    console.log('Adding new camera:', { ip, username, isFake });
+    const response = await api.post('/cameras', {
+      ip,
+      username,
+      password,
+      isFake
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error adding new camera:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+export const deleteCamera = async (cameraId) => {
+  try {
+    console.log('Deleting camera with ID:', cameraId);
+    const response = await api.delete(`/cameras/${cameraId}`);
+    return response.data;
+  } catch (error) {
+    console.error('Error deleting camera:', error);
     if (error.response) {
       throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
     } else if (error.request) {

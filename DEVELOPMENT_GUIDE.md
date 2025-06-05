@@ -33,27 +33,37 @@ npm run dev
 ## Development Workflow
 
 ### Frontend (main_front)
-- Components: `src/components/`
-- Pages: `src/pages/`
-- API: `src/services/api.js`
-- Styles: `src/App.css`
-- Main entry: `src/App.jsx`
+The frontend is built with React and uses Material-UI for the component library.
 
-**To add features:**
-- New UI: add to `components/` or `pages/`
-- New API call: update `services/api.js`
-- Update routing: edit `App.jsx`
+**Key Components:**
+- **Dashboard.jsx**: Main control interface with camera listing and configuration panels
+- **CameraCard.jsx**: Display for each camera with controls (VLC and Info buttons)
+- **CameraConfigPanel.jsx**: Panel for configuring camera resolution and FPS settings
+- **CameraInfoDialog.jsx**: Dialog for displaying camera information and delete option
+- **ValidationResults.jsx**: Shows validation results after applying camera configurations
+
+**Core Files:**
+- `src/components/`: React components for UI elements
+- `src/pages/`: Page-level components for routing
+- `src/services/api.js`: API client for backend communication
+- `src/App.jsx`: Main application with routing
 
 ### Backend (main_back)
-- Entry: `cmd/backend/main.go`
-- API: `internal/api/`
-- Camera logic: `internal/camera/`
-- Config: `config/cameras.json`
+The backend is built with Go and handles ONVIF camera communication and configuration.
 
-**To add features:**
-- New endpoint: add to `internal/api/`
-- Camera logic: extend `internal/camera/`
-- Update config: edit `config/cameras.json`
+**Key Components:**
+- **handlers.go**: API endpoints for camera operations (list, add, delete, configure)
+- **manager.go**: Core camera management functionality
+- **client.go**: ONVIF client implementation
+- **validator.go**: Stream validation using FFprobe
+
+**Core Directories:**
+- `cmd/backend/`: Application entry point
+- `internal/api/`: API handlers and routes
+- `internal/camera/`: Camera management logic
+- `internal/ffprobe/`: Stream validation
+- `pkg/models/`: Data models
+- `config/cameras.json`: Camera configuration storage
 
 ## Testing
 
@@ -62,22 +72,41 @@ npm run dev
 
 ## Debugging
 
-- **Frontend:** Check browser console, use `console.log`.
-- **Backend:** Check terminal output, use `go run ... 2>&1 | tee backend.log`.
+### Frontend
+- Check browser console for errors and debug output
+- Use the Network tab to inspect API requests and responses
+- Examine React component state using React DevTools
+- Use `console.log` for tracking data flow between components
 
-## Best Practices
+### Backend
+- Check terminal output for detailed logging information
+- Use `go run cmd/backend/main.go 2>&1 | tee backend.log` to capture logs to a file
+- Set breakpoints in code when using an IDE like VSCode or GoLand
+- Check logs for camera configuration and validation details
 
-- Use environment variables for secrets (especially in production).
-- Keep dependencies updated (`npm update`, `go get -u`).
-- Use `.gitignore` to avoid committing build artifacts and secrets.
-- Document new features and endpoints.
+## Camera Configuration Process
+
+The system implements a two-phase approach to camera configuration:
+
+1. **Phase 1 - Apply Configuration**: 
+   - Applies settings to all selected cameras
+   - Determines the closest supported resolution for each camera
+   - Prepares stream URLs for validation
+
+2. **Phase 2 - Validation**:
+   - After a brief pause (1 second), validates all cameras in the original order
+   - Uses FFprobe to check if the applied settings are functioning correctly
+   - For fake cameras, simulates successful validation
+
+This batch processing approach ensures efficient configuration of multiple cameras.
 
 ## Maintenance
 
-- Regularly update dependencies.
-- Monitor for security issues.
-- Backup configuration files.
+- The camera configuration is stored in `main_back/config/cameras.json`
+- Backup this file regularly to preserve camera settings
+- Update the frontend and backend dependencies periodically
+- Check for ONVIF library updates for new camera compatibility
 
 ---
 
-_Last updated: June 2025_
+_Last updated: June 5, 2025_

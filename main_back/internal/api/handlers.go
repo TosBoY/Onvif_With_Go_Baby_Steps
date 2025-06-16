@@ -262,6 +262,52 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		closestResolution := camera.FindClosestResolution(targetResolution, encoderOptions.Resolutions)
 		log.Printf("Closest resolution found for camera %s: %dx%d", cameraID, closestResolution.Width, closestResolution.Height)
 
+		// Check if current configuration already matches the requested configuration
+		currentMatches := currentConfig.Resolution.Width == closestResolution.Width &&
+			currentConfig.Resolution.Height == closestResolution.Height &&
+			currentConfig.FPS == input.FPS
+
+		if currentMatches {
+			log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d), skipping config change",
+				cameraID, closestResolution.Width, closestResolution.Height, input.FPS)
+
+			// Mark as successful but indicate no change was needed
+			result.Success = true
+			result.AppliedConfig = map[string]interface{}{
+				"resolution": map[string]int{
+					"width":  closestResolution.Width,
+					"height": closestResolution.Height,
+				},
+				"fps":       input.FPS,
+				"unchanged": true, // Indicate no change was needed
+			}
+			result.ResolutionAdjusted = input.Width != closestResolution.Width || input.Height != closestResolution.Height
+
+			// Still get stream URI for validation
+			streamURI, err := client.GetStreamURI(profileToken)
+			if err != nil {
+				log.Printf("Failed to get stream URI for %s: %v", cameraID, err)
+				result.Error = fmt.Errorf("failed to get stream URI: %w", err)
+				results[cameraID] = result
+				continue
+			}
+
+			// Parse and construct the URL with embedded credentials
+			parsedURI, err := url.Parse(streamURI)
+			if err != nil {
+				log.Printf("Failed to parse stream URI for %s: %v", cameraID, err)
+				result.Error = fmt.Errorf("failed to parse stream URI: %w", err)
+				results[cameraID] = result
+				continue
+			}
+
+			fullStreamURL := fmt.Sprintf("%s://%s:%s@%s%s", parsedURI.Scheme, client.Camera.Username, client.Camera.Password, parsedURI.Host, parsedURI.RequestURI())
+			result.StreamURL = fullStreamURL
+
+			results[cameraID] = result
+			continue
+		}
+
 		// Prepare the new configuration
 		newConfig := models.EncoderConfig{
 			Resolution: closestResolution,
@@ -403,6 +449,9 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			validationResults[cameraID] = validationMap
 		}
 	}
+
+	log.Printf("===== PHASE 2 COMPLETED =====")
+	log.Printf("\n")
 
 	// Prepare the final response
 	finalResponse := map[string]interface{}{

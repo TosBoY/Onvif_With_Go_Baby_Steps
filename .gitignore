@@ -39,6 +39,9 @@ main_back/*.test
 main_back/*.prof
 main_back/go.work
 
+!main_back/internal/ffmpeg
+!main_back/internal/ffmpeg/**
+
 # === Frontend (main_front) ===
 main_front/node_modules/
 main_front/.pnp
@@ -65,3 +68,10 @@ onvif_front/yarn-error.log*
 # === Tests and Backups ===
 info/backup/
 tests/
+
+
+# === FFMPEG Build ===
+/ffmpeg/
+/ffmpeg/**
+**/ffmpeg/*.exe
+main_back/internal/ffmpeg/*.exe

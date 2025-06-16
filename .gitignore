@@ -29,7 +29,6 @@ todolists.txt
 
 # === Go Backend (main_back) ===
 main_back/ffprobe/
-main_back/cmd/test/
 main_back/config/*.bak
 main_back/internal/ffprobe/
 main_back/vendor/
@@ -41,6 +40,7 @@ main_back/go.work
 
 !main_back/internal/ffmpeg
 !main_back/internal/ffmpeg/**
+main_back/internal/ffmpeg/*.exe
 
 # === Frontend (main_front) ===
 main_front/node_modules/
@@ -74,4 +74,3 @@ tests/
 /ffmpeg/
 /ffmpeg/**
 **/ffmpeg/*.exe
-main_back/internal/ffmpeg/*.exe

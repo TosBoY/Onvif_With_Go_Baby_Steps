@@ -1,8 +1,14 @@
 package ffmpeg
 
 /*
-#cgo CFLAGS: -IC:/ffmpeg/include
-#cgo LDFLAGS: -LC:/ffmpeg/lib -lavformat -lavcodec -lavutil
+#cgo windows CFLAGS: -IC:/ffmpeg/include
+#cgo windows LDFLAGS: -LC:/ffmpeg/lib -lavformat -lavcodec -lavutil
+#cgo linux CFLAGS: -I/usr/include -I/usr/local/include
+#cgo linux LDFLAGS: -lavformat -lavcodec -lavutil
+#cgo linux pkg-config: libavformat libavcodec libavutil
+#cgo darwin CFLAGS: -I/usr/local/include -I/opt/homebrew/include
+#cgo darwin LDFLAGS: -L/usr/local/lib -L/opt/homebrew/lib -lavformat -lavcodec -lavutil
+#cgo darwin pkg-config: libavformat libavcodec libavutil
 
 #include <stdio.h>
 #include <stdlib.h>

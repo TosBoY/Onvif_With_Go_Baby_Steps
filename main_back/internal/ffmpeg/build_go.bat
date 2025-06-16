@@ -15,11 +15,13 @@ REM Set CGO environment variables
 set CGO_ENABLED=1
 set CC=gcc
 
-REM Set FFmpeg paths (adjust these paths according to your FFmpeg installation)
+REM Note: CGO flags are now defined in the source file rtsp_analyzer.go
+REM with platform-specific directives. These environment variables
+REM are kept for compatibility but may be overridden by source directives.
 set FFMPEG_INCLUDE=C:\ffmpeg\include
 set FFMPEG_LIB=C:\ffmpeg\lib
 
-REM Set CGO flags
+REM Set CGO flags (these may be overridden by source file directives)
 set CGO_CFLAGS=-I%FFMPEG_INCLUDE%
 set CGO_LDFLAGS=-L%FFMPEG_LIB% -lavformat -lavcodec -lavutil
 

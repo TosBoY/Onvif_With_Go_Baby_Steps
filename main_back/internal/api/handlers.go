@@ -10,7 +10,7 @@ import (
 
 	"main_back/internal/camera"
 	"main_back/internal/config"
-	"main_back/internal/ffprobe"
+	"main_back/internal/ffmpeg"
 	"main_back/internal/vlc"
 	"main_back/pkg/models"
 
@@ -289,7 +289,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// The ONVIF GetStreamUri typically doesn't include credentials. Embed them for ffprobe.
+		// The ONVIF GetStreamUri typically doesn't include credentials. Embed them for FFmpeg validation.
 		parsedURI, err := url.Parse(streamURI)
 		if err != nil {
 			log.Printf("Failed to parse stream URI for %s: %v", cameraID, err)
@@ -369,14 +369,12 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			continue
 		}
-
-		// Validate the stream using ffprobe
+		// Validate the stream using FFmpeg CGO
 		position := findCameraPosition(cameraID)
-		log.Printf("Starting ffprobe validation for camera %s (position %d in original order)", cameraID, position)
-		validationResult, validationErr := ffprobe.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS)
-
+		log.Printf("Starting FFmpeg validation for camera %s (position %d in original order)", cameraID, position)
+		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS)
 		if validationErr != nil {
-			log.Printf("FFprobe validation failed for camera %s: %v", cameraID, validationErr)
+			log.Printf("FFmpeg validation failed for camera %s: %v", cameraID, validationErr)
 			validationResults[cameraID] = map[string]interface{}{
 				"isValid":        false,
 				"error":          validationErr.Error(),
@@ -401,7 +399,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				validationMap["error"] = validationResult.Error
 			}
 
-			log.Printf("FFprobe validation completed for camera %s: valid=%v", cameraID, validationResult.IsValid)
+			log.Printf("FFmpeg validation completed for camera %s: valid=%v", cameraID, validationResult.IsValid)
 			validationResults[cameraID] = validationMap
 		}
 	}

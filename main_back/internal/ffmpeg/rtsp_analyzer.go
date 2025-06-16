@@ -1,8 +1,8 @@
 package ffmpeg
 
 /*
-#cgo CFLAGS: -I.
-#cgo LDFLAGS: -lavformat -lavcodec -lavutil
+#cgo CFLAGS: -IC:/ffmpeg/include
+#cgo LDFLAGS: -LC:/ffmpeg/lib -lavformat -lavcodec -lavutil
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,6 +103,7 @@ import "C"
 
 import (
 	"fmt"
+	"strings"
 	"unsafe"
 )
 
@@ -185,4 +186,77 @@ func (s *StreamInfo) IsFullHD() bool {
 // Is4K returns true if the stream is 4K (2160p) or higher
 func (s *StreamInfo) Is4K() bool {
 	return s.Height >= 2160
+}
+
+type ValidationResult struct {
+	IsValid        bool    `json:"isValid"`
+	ExpectedWidth  int     `json:"expectedWidth"`
+	ExpectedHeight int     `json:"expectedHeight"`
+	ExpectedFPS    int     `json:"expectedFPS"`
+	ActualWidth    int     `json:"actualWidth"`
+	ActualHeight   int     `json:"actualHeight"`
+	ActualFPS      float64 `json:"actualFPS"`
+	Error          string  `json:"error,omitempty"`
+}
+
+func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS int) (*ValidationResult, error) {
+	result := &ValidationResult{
+		ExpectedWidth:  expectedWidth,
+		ExpectedHeight: expectedHeight,
+		ExpectedFPS:    expectedFPS,
+	}
+
+	streamInfo, err := AnalyzeRTSPStream(rtspURL)
+	if err != nil {
+		result.Error = fmt.Sprintf("Failed to analyze RTSP stream: %v", err)
+		return result, nil
+	}
+
+	result.ActualWidth = streamInfo.Width
+	result.ActualHeight = streamInfo.Height
+	result.ActualFPS = streamInfo.FPS
+
+	if !streamInfo.Success {
+		result.Error = streamInfo.ErrorMsg
+		return result, nil
+	}
+
+	// Perform validation logic
+	resolutionMatch := result.ActualWidth > 0 && result.ActualHeight > 0 &&
+		result.ActualWidth == result.ExpectedWidth && result.ActualHeight == result.ExpectedHeight
+
+	// Only consider FPS match if we have a valid FPS value
+	fpsMatch := result.ActualFPS > 0 && int(result.ActualFPS+0.5) == result.ExpectedFPS
+
+	// Only consider valid if we have all the necessary information
+	result.IsValid = resolutionMatch && fpsMatch
+
+	if !result.IsValid {
+		var errors []string
+
+		// Only report resolution mismatch if we have actual values
+		if result.ActualWidth > 0 && result.ActualHeight > 0 {
+			if !resolutionMatch {
+				errors = append(errors, fmt.Sprintf("resolution mismatch: got %dx%d, expected %dx%d",
+					result.ActualWidth, result.ActualHeight, result.ExpectedWidth, result.ExpectedHeight))
+			}
+		} else {
+			errors = append(errors, "failed to detect actual resolution")
+		}
+
+		// Only report FPS mismatch if we have an actual FPS value
+		if result.ActualFPS > 0 {
+			if !fpsMatch {
+				errors = append(errors, fmt.Sprintf("FPS mismatch: got %.2f, expected %d", result.ActualFPS, result.ExpectedFPS))
+			}
+		} else {
+			errors = append(errors, "failed to detect actual FPS")
+		}
+		// Set the error message
+		if len(errors) > 0 {
+			result.Error = strings.Join(errors, "; ")
+		}
+	}
+
+	return result, nil
 }

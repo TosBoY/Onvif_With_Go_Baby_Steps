@@ -53,7 +53,6 @@ const ValidationResults = ({ validation, appliedConfig }) => {
            v.actualWidth === v.expectedWidth && 
            v.actualHeight === v.expectedHeight;
   };
-
   // Function to check if FPS matches
   const fpsMatches = (v) => {
     // If this is a fake camera, consider it matching if isValid is true
@@ -62,10 +61,28 @@ const ValidationResults = ({ validation, appliedConfig }) => {
     return v.actualFPS && Math.abs(v.actualFPS - v.expectedFPS) < 1;
   };
 
+  // Function to check if bitrate matches (if expected bitrate was provided)
+  const bitrateMatches = (v) => {
+    // If this is a fake camera, consider it matching if isValid is true
+    if (v.isFake && v.isValid) return true;
+    
+    // If no expected bitrate was provided, consider it matching
+    if (!v.expectedBitrate || v.expectedBitrate === 0) return true;
+    
+    // If actual bitrate is available, check if it's close (within 10% tolerance)
+    if (v.actualBitrate) {
+      const tolerance = v.expectedBitrate * 0.1; // 10% tolerance
+      return Math.abs(v.actualBitrate - v.expectedBitrate) <= tolerance;
+    }
+    
+    // If actual bitrate is not available, we can't determine matching
+    return true; // Don't flag as mismatch if we can't measure it
+  };
   // Single validation result renderer with improved layout
   const renderSingleValidation = (validation) => {
     const resolutionMismatch = !resolutionMatches(validation);
     const fpsMismatch = !fpsMatches(validation);
+    const bitrateMismatch = !bitrateMatches(validation);
 
     return (
       <Box sx={{ mb: 3 }}>        <Alert 
@@ -125,9 +142,9 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                   </Grid>
                 </Box>
               )}
-              
-              {fpsMismatch && (
-                <Box>                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                {fpsMismatch && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium' }}>
                     Frame Rate Adjusted:
                   </Typography>
                   <Grid container spacing={2} sx={{ mt: 0.5 }}>
@@ -150,6 +167,32 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                   </Grid>
                 </Box>
               )}
+
+              {bitrateMismatch && validation.expectedBitrate && validation.expectedBitrate > 0 && (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                    Bitrate Adjusted:
+                  </Typography>
+                  <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Expected:
+                      </Typography>
+                      <Typography variant="body1">
+                        {validation.expectedBitrate} kbps
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Actual:
+                      </Typography>
+                      <Typography variant="body1">
+                        {validation.actualBitrate ? `${validation.actualBitrate} kbps` : 'Auto/Unknown'}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
             </CardContent>
           </Card>
         )}
@@ -164,11 +207,11 @@ const ValidationResults = ({ validation, appliedConfig }) => {
       </Box>
     );
   };
-  
-  // Improved compact list item for failed camera validation
+    // Improved compact list item for failed camera validation
   const renderFailedCamera = (v, index) => {
     const resolutionMismatch = !resolutionMatches(v);
     const fpsMismatch = !fpsMatches(v);
+    const bitrateMismatch = !bitrateMatches(v);
     const hasRequestedDimensions = v.requestedWidth && v.requestedHeight;
     const actualWidth = v.actualWidth || 0;
     const actualHeight = v.actualHeight || 0;
@@ -228,8 +271,7 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                 )}
               </Box>
             )}
-            
-            {fpsMismatch && (
+              {fpsMismatch && (
               <Box>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
@@ -251,13 +293,42 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                   />
                 </Stack>
                 {(!actualFPS) && (
-                  <Typography variant="caption" color="error.main">                    Unable to detect FPS from stream
+                  <Typography variant="caption" color="error.main">
+                    Unable to detect FPS from stream
                   </Typography>
                 )}
               </Box>
             )}
-          </Stack>
-            {v.error && !v.error.includes("resolution mismatch: got") && !v.error.includes("FPS mismatch: got") && (
+
+            {bitrateMismatch && v.expectedBitrate && v.expectedBitrate > 0 && (
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                    Bitrate:
+                  </Typography>
+                  <Chip 
+                    size="small" 
+                    color="default" 
+                    label={`Expected: ${v.expectedBitrate} kbps`}
+                    variant="outlined"
+                    sx={{ height: '22px', '& .MuiChip-label': { px: 1, py: 0 } }}
+                  />
+                  <Chip 
+                    size="small" 
+                    color="info" 
+                    label={`Actual: ${v.actualBitrate ? `${v.actualBitrate} kbps` : 'Auto'}`}
+                    variant="outlined"
+                    sx={{ height: '22px', '& .MuiChip-label': { px: 1, py: 0 } }}
+                  />
+                </Stack>
+                {(!v.actualBitrate && v.expectedBitrate > 0) && (
+                  <Typography variant="caption" color="warning.main">
+                    Bitrate validation not available from stream analysis
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Stack>          {v.error && !v.error.includes("resolution mismatch: got") && !v.error.includes("FPS mismatch: got") && !v.error.includes("bitrate mismatch: got") && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
               Note: {v.error}
             </Typography>

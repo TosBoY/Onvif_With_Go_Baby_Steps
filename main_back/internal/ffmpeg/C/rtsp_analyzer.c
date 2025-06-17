@@ -2,7 +2,7 @@
  * RTSP Stream Analyzer
  * 
  * This program connects to an RTSP stream and analyzes its resolution,
- * frame rate, and codec information using FFmpeg libraries.
+ * frame rate, bitrate, and codec information using FFmpeg libraries.
  */
 
 #include <stdio.h>
@@ -26,10 +26,20 @@ void display_stream_info(AVFormatContext *format_ctx, int stream_index) {
     
     const char *codec_name = avcodec_get_name(codec_params->codec_id);
     
-    // Only display the three required parameters for video streams
+    // Get bitrate (convert from bits/sec to kbps)
+    int bitrate_kbps = 0;
+    if (codec_params->bit_rate > 0) {
+        bitrate_kbps = codec_params->bit_rate / 1000;
+    }
+      // Display all video stream parameters including bitrate
     printf("  Codec: %s\n", codec_name);
     printf("  Resolution: %dx%d\n", codec_params->width, codec_params->height);
     printf("  Frame rate: %.2f fps\n", fps);
+    if (bitrate_kbps > 0) {
+        printf("  Bitrate: %d kbps\n", bitrate_kbps);
+    } else {
+        printf("  Bitrate: Unknown\n");
+    }
 }
 
 int main(int argc, char *argv[]) {

@@ -22,6 +22,7 @@ typedef struct {
     int width;
     int height;
     double fps;
+    int bitrate;
     int success;
     char error_msg[256];
 } StreamInfo;
@@ -76,11 +77,16 @@ StreamInfo analyze_rtsp_stream(const char* rtsp_url) {
             // Get codec name
             const char *codec_name = avcodec_get_name(codec_params->codec_id);
             strncpy(info.codec, codec_name, sizeof(info.codec) - 1);
-            info.codec[sizeof(info.codec) - 1] = '\0';
-
-            // Get resolution
+            info.codec[sizeof(info.codec) - 1] = '\0';            // Get resolution
             info.width = codec_params->width;
             info.height = codec_params->height;
+
+            // Get bitrate (convert from bits/sec to kbps)
+            if (codec_params->bit_rate > 0) {
+                info.bitrate = codec_params->bit_rate / 1000;
+            } else {
+                info.bitrate = 0;
+            }
 
             // Get frame rate
             if (stream->avg_frame_rate.den && stream->avg_frame_rate.num) {
@@ -119,6 +125,7 @@ type StreamInfo struct {
 	Width    int     `json:"width"`
 	Height   int     `json:"height"`
 	FPS      float64 `json:"fps"`
+	Bitrate  int     `json:"bitrate"` // in kbps
 	Success  bool    `json:"success"`
 	ErrorMsg string  `json:"error_msg,omitempty"`
 }
@@ -134,14 +141,13 @@ func AnalyzeRTSPStream(rtspURL string) (*StreamInfo, error) {
 	defer C.free(unsafe.Pointer(cURL))
 
 	// Call the C function
-	cInfo := C.analyze_rtsp_stream(cURL)
-
-	// Convert C struct to Go struct
+	cInfo := C.analyze_rtsp_stream(cURL) // Convert C struct to Go struct
 	info := &StreamInfo{
 		Codec:    C.GoString(&cInfo.codec[0]),
 		Width:    int(cInfo.width),
 		Height:   int(cInfo.height),
 		FPS:      float64(cInfo.fps),
+		Bitrate:  int(cInfo.bitrate),
 		Success:  int(cInfo.success) == 1,
 		ErrorMsg: C.GoString(&cInfo.error_msg[0]),
 	}
@@ -169,14 +175,22 @@ func (s *StreamInfo) GetFrameRate() string {
 	return fmt.Sprintf("%.2f fps", s.FPS)
 }
 
+// GetBitrate returns the bitrate as a formatted string
+func (s *StreamInfo) GetBitrate() string {
+	if s.Bitrate == 0 {
+		return "Unknown"
+	}
+	return fmt.Sprintf("%d kbps", s.Bitrate)
+}
+
 // String returns a formatted string representation of the stream info
 func (s *StreamInfo) String() string {
 	if !s.Success {
 		return fmt.Sprintf("Error: %s", s.ErrorMsg)
 	}
 
-	return fmt.Sprintf("Codec: %s, Resolution: %s, Frame Rate: %s",
-		s.Codec, s.GetStreamResolution(), s.GetFrameRate())
+	return fmt.Sprintf("Codec: %s, Resolution: %s, Frame Rate: %s, Bitrate: %s",
+		s.Codec, s.GetStreamResolution(), s.GetFrameRate(), s.GetBitrate())
 }
 
 // IsHighDefinition returns true if the stream is HD (720p) or higher
@@ -195,21 +209,24 @@ func (s *StreamInfo) Is4K() bool {
 }
 
 type ValidationResult struct {
-	IsValid        bool    `json:"isValid"`
-	ExpectedWidth  int     `json:"expectedWidth"`
-	ExpectedHeight int     `json:"expectedHeight"`
-	ExpectedFPS    int     `json:"expectedFPS"`
-	ActualWidth    int     `json:"actualWidth"`
-	ActualHeight   int     `json:"actualHeight"`
-	ActualFPS      float64 `json:"actualFPS"`
-	Error          string  `json:"error,omitempty"`
+	IsValid         bool    `json:"isValid"`
+	ExpectedWidth   int     `json:"expectedWidth"`
+	ExpectedHeight  int     `json:"expectedHeight"`
+	ExpectedFPS     int     `json:"expectedFPS"`
+	ExpectedBitrate int     `json:"expectedBitrate"`
+	ActualWidth     int     `json:"actualWidth"`
+	ActualHeight    int     `json:"actualHeight"`
+	ActualFPS       float64 `json:"actualFPS"`
+	ActualBitrate   int     `json:"actualBitrate"`
+	Error           string  `json:"error,omitempty"`
 }
 
-func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS int) (*ValidationResult, error) {
+func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, expectedBitrate int) (*ValidationResult, error) {
 	result := &ValidationResult{
-		ExpectedWidth:  expectedWidth,
-		ExpectedHeight: expectedHeight,
-		ExpectedFPS:    expectedFPS,
+		ExpectedWidth:   expectedWidth,
+		ExpectedHeight:  expectedHeight,
+		ExpectedFPS:     expectedFPS,
+		ExpectedBitrate: expectedBitrate,
 	}
 
 	streamInfo, err := AnalyzeRTSPStream(rtspURL)
@@ -217,10 +234,10 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS i
 		result.Error = fmt.Sprintf("Failed to analyze RTSP stream: %v", err)
 		return result, nil
 	}
-
 	result.ActualWidth = streamInfo.Width
 	result.ActualHeight = streamInfo.Height
 	result.ActualFPS = streamInfo.FPS
+	result.ActualBitrate = streamInfo.Bitrate
 
 	if !streamInfo.Success {
 		result.Error = streamInfo.ErrorMsg
@@ -230,12 +247,27 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS i
 	// Perform validation logic
 	resolutionMatch := result.ActualWidth > 0 && result.ActualHeight > 0 &&
 		result.ActualWidth == result.ExpectedWidth && result.ActualHeight == result.ExpectedHeight
-
 	// Only consider FPS match if we have a valid FPS value
 	fpsMatch := result.ActualFPS > 0 && int(result.ActualFPS+0.5) == result.ExpectedFPS
 
+	// Only consider bitrate match if expected bitrate was provided and we have actual bitrate
+	bitrateMatch := true // Default to true if no expected bitrate
+	if result.ExpectedBitrate > 0 {
+		if result.ActualBitrate > 0 {
+			// Allow 10% tolerance for bitrate comparison
+			tolerance := float64(result.ExpectedBitrate) * 0.1
+			diff := float64(result.ActualBitrate - result.ExpectedBitrate)
+			if diff < 0 {
+				diff = -diff
+			}
+			bitrateMatch = diff <= tolerance
+		} else {
+			bitrateMatch = false // Expected bitrate but couldn't detect actual
+		}
+	}
+
 	// Only consider valid if we have all the necessary information
-	result.IsValid = resolutionMatch && fpsMatch
+	result.IsValid = resolutionMatch && fpsMatch && bitrateMatch
 
 	if !result.IsValid {
 		var errors []string
@@ -249,7 +281,6 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS i
 		} else {
 			errors = append(errors, "failed to detect actual resolution")
 		}
-
 		// Only report FPS mismatch if we have an actual FPS value
 		if result.ActualFPS > 0 {
 			if !fpsMatch {
@@ -258,6 +289,18 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS i
 		} else {
 			errors = append(errors, "failed to detect actual FPS")
 		}
+
+		// Only report bitrate mismatch if expected bitrate was provided
+		if result.ExpectedBitrate > 0 {
+			if result.ActualBitrate > 0 {
+				if !bitrateMatch {
+					errors = append(errors, fmt.Sprintf("bitrate mismatch: got %d kbps, expected %d kbps", result.ActualBitrate, result.ExpectedBitrate))
+				}
+			} else {
+				errors = append(errors, "failed to detect actual bitrate")
+			}
+		}
+
 		// Set the error message
 		if len(errors) > 0 {
 			result.Error = strings.Join(errors, "; ")

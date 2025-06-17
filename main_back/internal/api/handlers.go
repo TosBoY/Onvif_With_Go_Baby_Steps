@@ -122,13 +122,13 @@ func HandleDeleteCamera(w http.ResponseWriter, r *http.Request) {
 
 func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received /apply-config request")
-
 	var input struct {
 		CameraID  string   `json:"cameraId"`  // For backward compatibility
 		CameraIDs []string `json:"cameraIds"` // New field for multiple cameras
 		Width     int      `json:"width"`
 		Height    int      `json:"height"`
 		FPS       int      `json:"fps"`
+		Bitrate   int      `json:"bitrate"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -136,17 +136,16 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("Failed to decode request body: %v", err), http.StatusBadRequest)
 		return
 	}
-
 	// Handle both legacy (single camera) and new (multiple cameras) format
 	var cameraIDs []string
 	if len(input.CameraIDs) > 0 {
 		cameraIDs = input.CameraIDs
-		log.Printf("Applying config for multiple cameras (%d): Width: %d, Height: %d, FPS: %d",
-			len(cameraIDs), input.Width, input.Height, input.FPS)
+		log.Printf("Applying config for multiple cameras (%d): Width: %d, Height: %d, FPS: %d, Bitrate: %d",
+			len(cameraIDs), input.Width, input.Height, input.FPS, input.Bitrate)
 	} else if input.CameraID != "" {
 		cameraIDs = []string{input.CameraID}
-		log.Printf("Applying config for single camera %s: Width: %d, Height: %d, FPS: %d",
-			input.CameraID, input.Width, input.Height, input.FPS)
+		log.Printf("Applying config for single camera %s: Width: %d, Height: %d, FPS: %d, Bitrate: %d",
+			input.CameraID, input.Width, input.Height, input.FPS, input.Bitrate)
 	} else {
 		log.Println("Error: No camera IDs provided in request")
 		http.Error(w, "No camera IDs provided", http.StatusBadRequest)
@@ -192,7 +191,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		// Check if camera is fake and handle it differently
 		if client.Camera.IsFake {
 			log.Printf("Camera %s is a simulated device, skipping real configuration", cameraID)
-
 			// For fake cameras, we simulate successful config application
 			result.Success = true
 			result.IsFake = true
@@ -201,7 +199,8 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 					"width":  input.Width,
 					"height": input.Height,
 				},
-				"fps": input.FPS,
+				"fps":     input.FPS,
+				"bitrate": input.Bitrate,
 			}
 			results[cameraID] = result
 			continue
@@ -262,16 +261,15 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Finding closest matching resolution for camera %s", cameraID)
 		closestResolution := camera.FindClosestResolution(targetResolution, encoderOptions.Resolutions)
 		log.Printf("Closest resolution found for camera %s: %dx%d", cameraID, closestResolution.Width, closestResolution.Height)
-
 		// Check if current configuration already matches the requested configuration
 		currentMatches := currentConfig.Resolution.Width == closestResolution.Width &&
 			currentConfig.Resolution.Height == closestResolution.Height &&
-			currentConfig.FPS == input.FPS
+			currentConfig.FPS == input.FPS &&
+			(input.Bitrate == 0 || currentConfig.Bitrate == input.Bitrate)
 
 		if currentMatches {
-			log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d), skipping config change",
-				cameraID, closestResolution.Width, closestResolution.Height, input.FPS)
-
+			log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d, Bitrate: %d), skipping config change",
+				cameraID, closestResolution.Width, closestResolution.Height, input.FPS, currentConfig.Bitrate)
 			// Mark as successful but indicate no change was needed
 			result.Success = true
 			result.AppliedConfig = map[string]interface{}{
@@ -280,6 +278,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 					"height": closestResolution.Height,
 				},
 				"fps":       input.FPS,
+				"bitrate":   currentConfig.Bitrate,
 				"unchanged": true, // Indicate no change was needed
 			}
 			result.ResolutionAdjusted = input.Width != closestResolution.Width || input.Height != closestResolution.Height
@@ -308,12 +307,12 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			results[cameraID] = result
 			continue
 		}
-
 		// Prepare the new configuration
 		newConfig := models.EncoderConfig{
 			Resolution: closestResolution,
 			Quality:    currentConfig.Quality, // Keep the current quality
 			FPS:        input.FPS,
+			Bitrate:    input.Bitrate,
 		}
 		log.Printf("Prepared new config for camera %s: %+v", cameraID, newConfig)
 
@@ -347,7 +346,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 
 		// Construct the URL with embedded credentials
 		fullStreamURL := fmt.Sprintf("%s://%s:%s@%s%s", parsedURI.Scheme, client.Camera.Username, client.Camera.Password, parsedURI.Host, parsedURI.RequestURI())
-
 		// Mark this camera as successfully configured
 		result.Success = true
 		result.AppliedConfig = map[string]interface{}{
@@ -355,7 +353,8 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"width":  closestResolution.Width,
 				"height": closestResolution.Height,
 			},
-			"fps": input.FPS,
+			"fps":     input.FPS,
+			"bitrate": input.Bitrate,
 		}
 		result.ResolutionAdjusted = input.Width != closestResolution.Width || input.Height != closestResolution.Height
 		result.StreamURL = fullStreamURL
@@ -393,52 +392,55 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			// Skip validation for failed configs or fake cameras
 			if result.IsFake {
 				position := findCameraPosition(cameraID)
-				log.Printf("Adding simulated validation results for fake camera %s (position %d in original order)", cameraID, position)
-				// Add simulated validation results for fake cameras
+				log.Printf("Adding simulated validation results for fake camera %s (position %d in original order)", cameraID, position) // Add simulated validation results for fake cameras
 				validationResults[cameraID] = map[string]interface{}{
-					"isValid":        true,
-					"expectedWidth":  input.Width,
-					"expectedHeight": input.Height,
-					"expectedFPS":    input.FPS,
-					"actualWidth":    input.Width, // For fake cameras, actual matches expected
-					"actualHeight":   input.Height,
-					"actualFPS":      float64(input.FPS),
+					"isValid":         true,
+					"expectedWidth":   input.Width,
+					"expectedHeight":  input.Height,
+					"expectedFPS":     input.FPS,
+					"expectedBitrate": input.Bitrate,
+					"actualWidth":     input.Width, // For fake cameras, actual matches expected
+					"actualHeight":    input.Height,
+					"actualFPS":       float64(input.FPS),
+					"actualBitrate":   input.Bitrate,
 					"streamInfo": map[string]interface{}{
 						"width":    input.Width,
 						"height":   input.Height,
 						"fps":      input.FPS,
+						"bitrate":  input.Bitrate,
 						"codec":    "h264 (simulated)",
-						"bitrate":  "variable (simulated)",
 						"duration": "live stream",
 					},
 					"message": "Simulated camera configuration applied successfully",
 				}
 			}
 			continue
-		}
-		// Validate the stream using FFmpeg CGO
+		} // Validate the stream using FFmpeg CGO
 		position := findCameraPosition(cameraID)
 		log.Printf("Starting FFmpeg validation for camera %s (position %d in original order)", cameraID, position)
-		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS)
+		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS, input.Bitrate)
 		if validationErr != nil {
 			log.Printf("FFmpeg validation failed for camera %s: %v", cameraID, validationErr)
 			validationResults[cameraID] = map[string]interface{}{
-				"isValid":        false,
-				"error":          validationErr.Error(),
-				"expectedWidth":  input.Width,
-				"expectedHeight": input.Height,
-				"expectedFPS":    input.FPS,
+				"isValid":         false,
+				"error":           validationErr.Error(),
+				"expectedWidth":   input.Width,
+				"expectedHeight":  input.Height,
+				"expectedFPS":     input.FPS,
+				"expectedBitrate": input.Bitrate,
 			}
 		} else {
 			// Create a map from the validation result
 			validationMap := map[string]interface{}{
-				"isValid":        validationResult.IsValid,
-				"actualWidth":    validationResult.ActualWidth,
-				"actualHeight":   validationResult.ActualHeight,
-				"actualFPS":      validationResult.ActualFPS,
-				"expectedWidth":  validationResult.ExpectedWidth,
-				"expectedHeight": validationResult.ExpectedHeight,
-				"expectedFPS":    validationResult.ExpectedFPS,
+				"isValid":         validationResult.IsValid,
+				"actualWidth":     validationResult.ActualWidth,
+				"actualHeight":    validationResult.ActualHeight,
+				"actualFPS":       validationResult.ActualFPS,
+				"actualBitrate":   validationResult.ActualBitrate,
+				"expectedWidth":   validationResult.ExpectedWidth,
+				"expectedHeight":  validationResult.ExpectedHeight,
+				"expectedFPS":     validationResult.ExpectedFPS,
+				"expectedBitrate": validationResult.ExpectedBitrate,
 			}
 
 			// Add error if present
@@ -453,7 +455,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("===== PHASE 2 COMPLETED =====")
 	log.Printf("\n")
-
 	// Prepare the final response
 	finalResponse := map[string]interface{}{
 		"status": "configuration applied",
@@ -462,7 +463,8 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"width":  input.Width,
 				"height": input.Height,
 			},
-			"fps": input.FPS,
+			"fps":     input.FPS,
+			"bitrate": input.Bitrate,
 		},
 		"results": make(map[string]interface{}),
 	}

@@ -14,12 +14,14 @@ type EncoderConfig struct {
 	Resolution Resolution
 	Quality    int
 	FPS        int
+	Bitrate    int
 }
 
 type EncoderOption struct {
 	Resolutions []Resolution
 	Quality     []int
 	FPSOptions  []int
+	Bitrate     []int
 }
 
 type Resolution struct {

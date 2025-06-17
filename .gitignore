@@ -43,6 +43,8 @@ main_back/go.work
 !main_back/internal/ffmpeg
 !main_back/internal/ffmpeg/**
 main_back/internal/ffmpeg/*.exe
+main_back/internal/ffmpeg/C/*.exe
+
 
 # === Frontend (main_front) ===
 main_front/node_modules/

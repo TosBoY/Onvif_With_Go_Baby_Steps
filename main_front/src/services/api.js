@@ -37,13 +37,13 @@ export const getCameras = async () => {
   }
 };
 
-export const applyConfig = async (cameraIds, width, height, fps) => {
+export const applyConfig = async (cameraIds, width, height, fps, bitrate) => {
   try {
     // Handle both single camera ID (string) and multiple camera IDs (array)
     const isBatchMode = Array.isArray(cameraIds);
     const payload = isBatchMode 
-      ? { cameraIds, width, height, fps }
-      : { cameraId: cameraIds, width, height, fps };
+      ? { cameraIds, width, height, fps, bitrate }
+      : { cameraId: cameraIds, width, height, fps, bitrate };
       
     console.log('Applying config:', payload);
     const response = await api.post('/apply-config', payload);

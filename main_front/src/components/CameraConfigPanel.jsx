@@ -33,10 +33,10 @@ const CameraConfigPanel = ({
   cameras = [],
   onConfigurationApplied, // Add this prop
   onClearValidation // Add this prop
-}) => {
-  const [width, setWidth] = useState(1280);
+}) => {  const [width, setWidth] = useState(1280);
   const [height, setHeight] = useState(720);
   const [fps, setFps] = useState(25); // Set default FPS to 25
+  const [bitrate, setBitrate] = useState(''); // Add bitrate state
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState({ success: false, message: null });
 
@@ -60,7 +60,25 @@ const CameraConfigPanel = ({
       // Allow partial input (like just typing numbers)
       setFps(value);
     }
-  };const handleApplyConfig = async () => {
+  };
+
+  const handleBitrateChange = (event) => {
+    const value = event.target.value;
+    // Allow empty string for clearing the field
+    if (value === '') {
+      setBitrate('');
+      return;
+    }
+    // Parse and validate the number
+    const numValue = parseInt(value, 10);
+    if (!isNaN(numValue) && numValue > 0) {
+      setBitrate(numValue);
+    } else {
+      // Allow partial input (like just typing numbers)
+      setBitrate(value);
+    }
+  };
+  const handleApplyConfig = async () => {
     // Clear previous validation results
     if (onClearValidation) {
       onClearValidation();
@@ -72,9 +90,7 @@ const CameraConfigPanel = ({
         message: 'Please select at least one camera from the list to apply configuration' 
       });
       return;
-    }
-
-    // Validate FPS value before sending
+    }    // Validate FPS value before sending
     const fpsValue = parseInt(fps, 10);
     if (isNaN(fpsValue) || fpsValue <= 0) {
       setResult({ 
@@ -83,16 +99,28 @@ const CameraConfigPanel = ({
       });
       return;
     }
+
+    // Validate bitrate value if provided
+    let bitrateValue = 0; // Default to 0 if not provided
+    if (bitrate !== '') {
+      bitrateValue = parseInt(bitrate, 10);
+      if (isNaN(bitrateValue) || bitrateValue <= 0) {
+        setResult({ 
+          success: false, 
+          message: 'Please enter a valid bitrate (positive number) or leave it empty for automatic selection' 
+        });
+        return;
+      }
+    }
     
     setIsLoading(true);
     setResult({ 
       success: true, 
       message: `Applying configuration to ${selectedCameras.length} camera(s)... This may take a while as cameras need time to update and validate settings.`
     });
-    
-    // Use batch mode to send all camera IDs at once
+      // Use batch mode to send all camera IDs at once
     try {      // Call API with array of camera IDs (batch mode) - ensure fps is a number
-      const batchResult = await applyConfig(selectedCameras, width, height, fpsValue);
+      const batchResult = await applyConfig(selectedCameras, width, height, fpsValue, bitrateValue);
       console.log('Batch configuration result:', batchResult);      // Process response - extract validation results
       const validations = [];
       const successfulCameras = [];
@@ -109,14 +137,14 @@ const CameraConfigPanel = ({
             successfulCameras.push(cameraId);
             
             // Extract and format validation data if available
-            if (result.validation) {
-              const validationData = {
+            if (result.validation) {              const validationData = {
                 ...result.validation,
                 cameraId,
                 // Add expected values from the original request
                 expectedWidth: width,
                 expectedHeight: height,
-                expectedFPS: fps
+                expectedFPS: fps,
+                expectedBitrate: bitrateValue
               };
               
               // For fake cameras, ensure we're marking if values match exactly
@@ -137,12 +165,12 @@ const CameraConfigPanel = ({
       }
       
       // Pass all validation results back to Dashboard
-      if (onConfigurationApplied && validations.length > 0) {
-        const compositeResult = {
+      if (onConfigurationApplied && validations.length > 0) {        const compositeResult = {
           validation: validations,
           appliedConfig: {
             resolution: { width, height },
-            fps
+            fps,
+            bitrate: bitrateValue
           }
         };
         onConfigurationApplied(compositeResult);
@@ -187,8 +215,7 @@ const CameraConfigPanel = ({
       <Typography variant="h6" gutterBottom>
         Camera Configuration
       </Typography>
-      
-      <Grid container spacing={2}>
+        <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
           <TextField
             select
@@ -219,7 +246,25 @@ const CameraConfigPanel = ({
               sx: { color: 'white' }
             }}
           />
-        </Grid>      </Grid>      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <TextField
+            label="Bitrate (kbps)"
+            type="number"
+            value={bitrate}
+            onChange={handleBitrateChange}
+            placeholder="Auto (leave empty for camera default)"
+            fullWidth
+            margin="normal"
+            helperText="Leave empty to use camera's default bitrate range"
+            InputProps={{
+              inputProps: { min: 1 },
+              sx: { color: 'white' }
+            }}
+          />
+        </Grid>
+      </Grid><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
         <Button 
           variant="contained" 
           color="primary"

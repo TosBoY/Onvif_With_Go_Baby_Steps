@@ -36,7 +36,6 @@ func GetCurrentEncoderOptions(client *CameraClient, profileToken, configToken st
 	if err != nil {
 		return models.EncoderOption{}, fmt.Errorf("failed to get encoder options: %w", err)
 	}
-
 	var resolutions []models.Resolution
 	for _, res := range resp.Options.H264.ResolutionsAvailable {
 		resolutions = append(resolutions, models.Resolution{
@@ -44,16 +43,29 @@ func GetCurrentEncoderOptions(client *CameraClient, profileToken, configToken st
 			Height: int(res.Height),
 		})
 	}
-
 	var fpsList []int
 	// Iterate from min to max frame rate
 	for fps := resp.Options.H264.FrameRateRange.Min; fps <= resp.Options.H264.FrameRateRange.Max; fps++ {
 		fpsList = append(fpsList, int(fps))
 	}
+	var bitrateList []int
+	// Check if bitrate range is available in the extension
+	if resp.Options.Extension.H264.BitrateRange.Min > 0 && resp.Options.Extension.H264.BitrateRange.Max > 0 {
+		// Use only the actual min and max values from camera's range
+		minBitrate := int(resp.Options.Extension.H264.BitrateRange.Min)
+		maxBitrate := int(resp.Options.Extension.H264.BitrateRange.Max)
+
+		// Only provide min and max bitrate options
+		bitrateList = append(bitrateList, minBitrate)
+		if minBitrate != maxBitrate {
+			bitrateList = append(bitrateList, maxBitrate)
+		}
+	}
 
 	return models.EncoderOption{
 		Resolutions: resolutions,
 		FPSOptions:  fpsList,
+		Bitrate:     bitrateList,
 	}, nil
 }
 
@@ -74,6 +86,7 @@ func GetCurrentConfig(client *CameraClient, configToken string) (models.EncoderC
 		},
 		Quality: int(cfg.Quality),
 		FPS:     int(cfg.RateControl.FrameRateLimit),
+		Bitrate: int(cfg.RateControl.BitrateLimit),
 	}, nil
 }
 
@@ -86,17 +99,35 @@ func SetEncoderConfig(client *CameraClient, configToken string, config models.En
 
 	cfg := resp.Configuration
 
+	// Use existing values if input values are not provided (0)
 	if input.Quality == 0 {
 		input.Quality = config.Quality
 	}
 	if input.FPS == 0 {
 		input.FPS = config.FPS
 	}
+	if input.Bitrate == 0 {
+		// Default to a reasonable bitrate based on resolution if not provided
+		if config.Bitrate > 0 {
+			input.Bitrate = config.Bitrate
+		} else {
+			// Calculate default bitrate based on resolution (rough estimate)
+			pixels := input.Resolution.Width * input.Resolution.Height
+			if pixels > 2000000 { // 1080p+
+				input.Bitrate = 8192
+			} else if pixels > 1000000 { // 720p+
+				input.Bitrate = 4096
+			} else {
+				input.Bitrate = 2048
+			}
+		}
+	}
 
 	cfg.Resolution.Width = int32(input.Resolution.Width)
 	cfg.Resolution.Height = int32(input.Resolution.Height)
 	cfg.RateControl.FrameRateLimit = int32(input.FPS)
 	cfg.Quality = float32(input.Quality)
+	cfg.RateControl.BitrateLimit = int32(input.Bitrate)
 
 	req := &media.SetVideoEncoderConfiguration{
 		Configuration:    cfg,

@@ -81,13 +81,18 @@ const CameraInfoDialog = ({ open, onClose, camera, onCameraDeleted }) => {
           <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
             Camera Details
           </Typography>
-          
-          <Box sx={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 1.5 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '120px 1fr', rowGap: 1.5 }}>
             <Typography variant="body2" color="text.secondary">ID:</Typography>
             <Typography variant="body2">{camera.id}</Typography>
             
             <Typography variant="body2" color="text.secondary">IP Address:</Typography>
             <Typography variant="body2">{camera.ip}</Typography>
+            
+            <Typography variant="body2" color="text.secondary">Port:</Typography>
+            <Typography variant="body2">{camera.port || 80} {camera.port === 0 && '(default)'}</Typography>
+            
+            <Typography variant="body2" color="text.secondary">Service URL:</Typography>
+            <Typography variant="body2">{camera.url || 'onvif/media_service'} {!camera.url && '(default)'}</Typography>
             
             <Typography variant="body2" color="text.secondary">Username:</Typography>
             <Typography variant="body2">{camera.username}</Typography>

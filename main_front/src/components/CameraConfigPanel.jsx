@@ -45,13 +45,22 @@ const CameraConfigPanel = ({
     setWidth(selectedResolution.width);
     setHeight(selectedResolution.height);
   };
-
   const handleFpsChange = (event) => {
-    const value = parseInt(event.target.value, 10);
-    if (!isNaN(value) && value > 0) {
+    const value = event.target.value;
+    // Allow empty string for clearing the field
+    if (value === '') {
+      setFps('');
+      return;
+    }
+    // Parse and validate the number
+    const numValue = parseInt(value, 10);
+    if (!isNaN(numValue) && numValue > 0) {
+      setFps(numValue);
+    } else {
+      // Allow partial input (like just typing numbers)
       setFps(value);
     }
-  };  const handleApplyConfig = async () => {
+  };const handleApplyConfig = async () => {
     // Clear previous validation results
     if (onClearValidation) {
       onClearValidation();
@@ -64,6 +73,16 @@ const CameraConfigPanel = ({
       });
       return;
     }
+
+    // Validate FPS value before sending
+    const fpsValue = parseInt(fps, 10);
+    if (isNaN(fpsValue) || fpsValue <= 0) {
+      setResult({ 
+        success: false, 
+        message: 'Please enter a valid frame rate (positive number)' 
+      });
+      return;
+    }
     
     setIsLoading(true);
     setResult({ 
@@ -72,9 +91,8 @@ const CameraConfigPanel = ({
     });
     
     // Use batch mode to send all camera IDs at once
-    try {
-      // Call API with array of camera IDs (batch mode)
-      const batchResult = await applyConfig(selectedCameras, width, height, fps);
+    try {      // Call API with array of camera IDs (batch mode) - ensure fps is a number
+      const batchResult = await applyConfig(selectedCameras, width, height, fpsValue);
       console.log('Batch configuration result:', batchResult);      // Process response - extract validation results
       const validations = [];
       const successfulCameras = [];

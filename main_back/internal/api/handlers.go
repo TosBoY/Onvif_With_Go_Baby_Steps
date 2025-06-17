@@ -40,6 +40,8 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		IP       string `json:"ip"`
+		Port     int    `json:"port"`
+		URL      string `json:"url"`
 		Username string `json:"username"`
 		Password string `json:"password"`
 		IsFake   bool   `json:"isFake"`
@@ -63,21 +65,21 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Username is required", http.StatusBadRequest)
 		return
 	}
-
 	// Password can be empty for some cameras, so we don't check for it
-
-	log.Printf("Adding new camera with IP: %s, Username: %s, IsFake: %v", input.IP, input.Username, input.IsFake)
-	newID, err := camera.AddNewCamera(input.IP, input.Username, input.Password, input.IsFake)
+	log.Printf("Adding new camera with IP: %s, Port: %d, URL: %s, Username: %s, IsFake: %v",
+		input.IP, input.Port, input.URL, input.Username, input.IsFake)
+	newID, err := camera.AddNewCamera(input.IP, input.Port, input.URL, input.Username, input.Password, input.IsFake)
 	if err != nil {
 		log.Printf("Error adding new camera: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to add new camera: %v", err), http.StatusInternalServerError)
 		return
 	}
-
 	// Return the new camera ID and details
 	newCamera := models.Camera{
 		ID:       newID,
 		IP:       input.IP,
+		Port:     input.Port,
+		URL:      input.URL,
 		Username: input.Username,
 		Password: input.Password,
 		IsFake:   input.IsFake,
@@ -88,7 +90,6 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newCamera)
 }
 
-// HandleDeleteCamera handles DELETE requests for removing cameras from the system.
 func HandleDeleteCamera(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	cameraID := vars["id"]

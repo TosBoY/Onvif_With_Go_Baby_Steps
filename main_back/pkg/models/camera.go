@@ -3,6 +3,8 @@ package models
 type Camera struct {
 	ID       string `json:"id"`
 	IP       string `json:"ip"`
+	Port     int    `json:"port"`
+	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
 	IsFake   bool   `json:"isFake"`

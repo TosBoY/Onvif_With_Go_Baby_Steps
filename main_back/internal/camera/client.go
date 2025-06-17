@@ -22,8 +22,20 @@ func NewCameraClient(cam models.Camera) (*CameraClient, error) {
 	client := soap.NewClient(soap.WithTimeout(5 * time.Second))
 	client.AddHeader(soap.NewWSSSecurityHeader(cam.Username, cam.Password, time.Now()))
 
-	// Build media service endpoint (typically /onvif/media_service)
-	endpoint := fmt.Sprintf("http://%s/onvif/media_service", cam.IP)
+	// Determine port to use (default 80 if port is 0)
+	port := cam.Port
+	if port == 0 {
+		port = 80
+	}
+
+	// Determine URL path to use (default onvif/media_service if URL is empty)
+	urlPath := cam.URL
+	if urlPath == "" {
+		urlPath = "onvif/media_service"
+	}
+
+	// Build media service endpoint with port and URL path
+	endpoint := fmt.Sprintf("http://%s:%d/%s", cam.IP, port, urlPath)
 
 	// Initialize ONVIF media service
 	mediaService := media.NewMedia(client, endpoint)

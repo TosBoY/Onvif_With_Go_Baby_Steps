@@ -50,7 +50,7 @@ func GetCameraClient(id string) (*CameraClient, error) {
 // AddNewCamera adds a new camera to the cameras.json file and assigns it an ID
 // that is one greater than the largest existing ID.
 // Returns the new camera ID and any error encountered.
-func AddNewCamera(ip string, username string, password string, isFake bool) (string, error) {
+func AddNewCamera(ip string, port int, url string, username string, password string, isFake bool) (string, error) {
 	// Get the path to cameras.json
 	workingDir, err := os.Getwd()
 	if err != nil {
@@ -86,11 +86,12 @@ func AddNewCamera(ip string, username string, password string, isFake bool) (str
 	}
 
 	// Create a new ID by incrementing the highest ID
-	newID := strconv.Itoa(highestID + 1)
-	// Create a new camera
+	newID := strconv.Itoa(highestID + 1) // Create a new camera
 	newCamera := models.Camera{
 		ID:       newID,
 		IP:       ip,
+		Port:     port,
+		URL:      url,
 		Username: username,
 		Password: password,
 		IsFake:   isFake,

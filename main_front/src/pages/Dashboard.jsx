@@ -37,13 +37,16 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [selectedCameras, setSelectedCameras] = useState([]);
-  
-  // Add validation state
+    // Add validation state
   const [validationResults, setValidationResults] = useState(null);
   const [appliedConfig, setAppliedConfig] = useState(null);
-  const [configSuccess, setConfigSuccess] = useState('');  // Add camera dialog state
+  const [configSuccess, setConfigSuccess] = useState('');
+  
+  // Add camera dialog state
   const [addCameraDialogOpen, setAddCameraDialogOpen] = useState(false);
   const [newCameraIP, setNewCameraIP] = useState('');
+  const [newCameraPort, setNewCameraPort] = useState('');
+  const [newCameraURL, setNewCameraURL] = useState('');
   const [newCameraUsername, setNewCameraUsername] = useState('');
   const [newCameraPassword, setNewCameraPassword] = useState('');
   const [newCameraIsFake, setNewCameraIsFake] = useState(false);
@@ -144,13 +147,14 @@ const Dashboard = () => {
   const handleClearValidation = () => {
     setValidationResults(null);
     setAppliedConfig(null);
-    setConfigSuccess('');
-  };
+    setConfigSuccess('');  };
   
   // Add camera dialog functions
   const handleAddCameraDialogOpen = () => {
     setAddCameraDialogOpen(true);
     setNewCameraIP('');
+    setNewCameraPort('');
+    setNewCameraURL('');
     setNewCameraUsername('');
     setNewCameraPassword('');
     setNewCameraIsFake(false);
@@ -175,9 +179,10 @@ const Dashboard = () => {
     
     setAddingCamera(true);
     setAddCameraError('');
-    
-    try {
-      const newCamera = await addNewCamera(newCameraIP, newCameraUsername, newCameraPassword, newCameraIsFake);
+      try {
+      // Convert port to number, default to 0 if empty
+      const portValue = newCameraPort ? parseInt(newCameraPort, 10) : 0;
+      const newCamera = await addNewCamera(newCameraIP, portValue, newCameraURL, newCameraUsername, newCameraPassword, newCameraIsFake);
       console.log('New camera added:', newCamera);
         // Close the dialog and refresh camera list
       setAddCameraDialogOpen(false);
@@ -371,8 +376,7 @@ const Dashboard = () => {
               {addCameraError}
             </Alert>
           )}
-          
-          <TextField
+            <TextField
             autoFocus
             margin="dense"
             id="camera-ip"
@@ -385,6 +389,34 @@ const Dashboard = () => {
             placeholder="192.168.1.100"
             helperText="Enter the IP address of your ONVIF camera"
             sx={{ mb: 2, mt: 1 }}
+          />
+          
+          <TextField
+            margin="dense"
+            id="camera-port"
+            label="Port (Optional)"
+            type="number"
+            fullWidth
+            variant="outlined"
+            value={newCameraPort}
+            onChange={(e) => setNewCameraPort(e.target.value)}
+            placeholder="80"
+            helperText="Enter the port number (default: 80 if left empty)"
+            sx={{ mb: 2 }}
+          />
+          
+          <TextField
+            margin="dense"
+            id="camera-url"
+            label="Service URL (Optional)"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={newCameraURL}
+            onChange={(e) => setNewCameraURL(e.target.value)}
+            placeholder="onvif/media_service"
+            helperText="Enter the ONVIF service path (default: onvif/media_service if left empty)"
+            sx={{ mb: 2 }}
           />
           
           <TextField

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -17,15 +17,32 @@ import {
   CardContent,
   List,
   ListItem,
-  Stack
+  Stack,
+  Button,
+  CircularProgress
 } from '@mui/material';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import DownloadIcon from '@mui/icons-material/Download';
+import { exportValidationCSV } from '../services/api';
 
 const ValidationResults = ({ validation, appliedConfig }) => {
+  const [isExporting, setIsExporting] = useState(false);
+
   if (!validation) {
     return null;
-  }
+  }  // CSV Export Function
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    try {
+      await exportValidationCSV(validation);
+    } catch (error) {
+      console.error('Error exporting CSV:', error);
+      alert('Failed to export CSV. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
   // Check if this is a single validation result or multiple
   const isMultiple = Array.isArray(validation);
   
@@ -358,12 +375,23 @@ const ValidationResults = ({ validation, appliedConfig }) => {
       </ListItem>
     );
   };
-
   return (
     <Box sx={{ mt: 3 }}>
-      <Typography variant="h6" gutterBottom>
-        Stream Validation Results
-      </Typography>      {/* Show summary if multiple validations */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6">
+          Stream Validation Results
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={isExporting ? <CircularProgress size={16} /> : <DownloadIcon />}
+          onClick={handleExportCSV}
+          disabled={isExporting}
+          size="small"
+          sx={{ minWidth: '120px' }}
+        >
+          {isExporting ? 'Exporting...' : 'Export CSV'}
+        </Button>
+      </Box>{/* Show summary if multiple validations */}
       {isMultiple && (
         <Alert 
           severity={resolutionFailures.length > 0 ? 'error' : (warningValidations.length > 0 ? 'warning' : 'success')} 

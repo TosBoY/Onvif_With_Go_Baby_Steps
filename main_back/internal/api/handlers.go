@@ -1,11 +1,13 @@
 package api
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras", HandleAddCamera).Methods("POST")
 	r.HandleFunc("/cameras/{id}", HandleDeleteCamera).Methods("DELETE")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
+	r.HandleFunc("/export-validation-csv", HandleExportValidationCSV).Methods("POST")
 	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
 }
 
@@ -388,7 +391,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			log.Printf("No configuration result found for camera %s, skipping validation", cameraID)
 			continue
 		}
-
 		if !result.Success || result.IsFake {
 			// Skip validation for failed configs or fake cameras
 			if result.IsFake {
@@ -413,6 +415,26 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 						"duration": "live stream",
 					},
 					"message": "Simulated camera configuration applied successfully",
+				}
+			} else {
+				// Add validation results for failed configuration cameras
+				position := findCameraPosition(cameraID)
+				log.Printf("Adding failed validation results for camera %s (position %d in original order)", cameraID, position)
+				errorMessage := "Configuration failed - camera not reachable"
+				if result.Error != nil {
+					errorMessage = result.Error.Error()
+				}
+				validationResults[cameraID] = map[string]interface{}{
+					"isValid":         false,
+					"expectedWidth":   input.Width,
+					"expectedHeight":  input.Height,
+					"expectedFPS":     input.FPS,
+					"expectedBitrate": input.Bitrate,
+					"actualWidth":     0,
+					"actualHeight":    0,
+					"actualFPS":       0.0,
+					"actualBitrate":   0,
+					"error":           errorMessage,
 				}
 			}
 			continue
@@ -638,7 +660,247 @@ func HandleVLC(w http.ResponseWriter, r *http.Request) {
 		"message":   message,
 		"streamUrl": authenticatedStreamURI,
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /export-validation-csv request")
+
+	var input struct {
+		Validation interface{} `json:"validation"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		log.Printf("Error decoding export-validation-csv request body: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to decode request body: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if input.Validation == nil {
+		log.Println("Error: No validation data provided")
+		http.Error(w, "Validation data is required", http.StatusBadRequest)
+		return
+	}
+	// Convert validation data to map format
+	validationMap, err := convertValidationToMap(input.Validation)
+	if err != nil {
+		log.Printf("Error converting validation data: %v", err)
+		http.Error(w, fmt.Sprintf("Invalid validation data format: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Load camera information to get IP addresses
+	cameras, err := config.LoadCameraList()
+	if err != nil {
+		log.Printf("Error loading camera list: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to load camera information: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Generate CSV content
+	csvContent, err := generateValidationCSV(validationMap, cameras)
+	if err != nil {
+		log.Printf("Error generating CSV: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to generate CSV: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for CSV download
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"validation_results.csv\"")
+
+	// Write CSV content
+	w.Write([]byte(csvContent))
+	log.Println("CSV export completed successfully")
+}
+
+func generateValidationCSV(validation map[string]interface{}, cameras []models.Camera) (string, error) {
+	var csvBuilder strings.Builder
+	writer := csv.NewWriter(&csvBuilder)
+
+	// Create a map of camera ID to camera info for quick lookup
+	cameraMap := make(map[string]models.Camera)
+	for _, camera := range cameras {
+		cameraMap[camera.ID] = camera
+	}
+
+	// Write CSV header with IP column
+	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual"}
+	if err := writer.Write(header); err != nil {
+		return "", fmt.Errorf("failed to write CSV header: %v", err)
+	}
+
+	// Process each camera's validation result
+	for cameraID, validationData := range validation {
+		// Convert interface{} to map[string]interface{}
+		validationMap, ok := validationData.(map[string]interface{})
+		if !ok {
+			log.Printf("Warning: Invalid validation data format for camera %s", cameraID)
+			continue
+		}
+
+		// Get camera IP from camera map
+		cameraIP := "Unknown"
+		if camera, exists := cameraMap[cameraID]; exists {
+			cameraIP = camera.IP
+		}
+		// Extract data with safe type conversion and determine result status
+		result := "FAIL" // Default to fail
+
+		if isValid, exists := validationMap["isValid"]; exists {
+			if valid, ok := isValid.(bool); ok && valid {
+				// Camera is valid, but check if there are warnings (FPS/bitrate mismatches)
+
+				// Check resolution match
+				resolutionMatches := true
+				if expectedWidth, hasExpWidth := validationMap["expectedWidth"]; hasExpWidth {
+					if expectedHeight, hasExpHeight := validationMap["expectedHeight"]; hasExpHeight {
+						if actualWidth, hasActWidth := validationMap["actualWidth"]; hasActWidth {
+							if actualHeight, hasActHeight := validationMap["actualHeight"]; hasActHeight {
+								if expW, ok1 := expectedWidth.(float64); ok1 {
+									if expH, ok2 := expectedHeight.(float64); ok2 {
+										if actW, ok3 := actualWidth.(float64); ok3 {
+											if actH, ok4 := actualHeight.(float64); ok4 {
+												resolutionMatches = (actW > 0 && actH > 0 &&
+													int(actW) == int(expW) && int(actH) == int(expH))
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
+				// Check FPS match
+				fpsMatches := true
+				if expectedFPS, hasExpFPS := validationMap["expectedFPS"]; hasExpFPS {
+					if actualFPS, hasActFPS := validationMap["actualFPS"]; hasActFPS {
+						if expFPS, ok1 := expectedFPS.(float64); ok1 {
+							if actFPS, ok2 := actualFPS.(float64); ok2 {
+								if actFPS > 0 {
+									fpsMatches = (int(actFPS+0.5) == int(expFPS))
+								}
+							}
+						}
+					}
+				}
+
+				// Check bitrate match
+				bitrateMatches := true
+				if expectedBitrate, hasExpBitrate := validationMap["expectedBitrate"]; hasExpBitrate {
+					if actualBitrate, hasActBitrate := validationMap["actualBitrate"]; hasActBitrate {
+						if expBitrate, ok1 := expectedBitrate.(float64); ok1 {
+							if actBitrate, ok2 := actualBitrate.(float64); ok2 {
+								if expBitrate > 0 && actBitrate > 0 {
+									tolerance := expBitrate * 0.1
+									diff := actBitrate - expBitrate
+									if diff < 0 {
+										diff = -diff
+									}
+									bitrateMatches = (diff <= tolerance)
+								}
+							}
+						}
+					}
+				}
+
+				// Determine final result
+				if resolutionMatches && fpsMatches && bitrateMatches {
+					result = "PASS"
+				} else if resolutionMatches {
+					// Resolution matches but FPS/bitrate doesn't = warning
+					result = "WARNING"
+				} else {
+					// Resolution doesn't match = fail (this shouldn't happen if isValid=true, but just in case)
+					result = "FAIL"
+				}
+			}
+		}
+
+		// Format resolution expected
+		resoExpected := ""
+		if expectedWidth, hasWidth := validationMap["expectedWidth"]; hasWidth {
+			if expectedHeight, hasHeight := validationMap["expectedHeight"]; hasHeight {
+				if w, ok1 := expectedWidth.(float64); ok1 {
+					if h, ok2 := expectedHeight.(float64); ok2 {
+						resoExpected = fmt.Sprintf("%dx%d", int(w), int(h))
+					}
+				}
+			}
+		}
+
+		// Format resolution actual
+		resoActual := ""
+		if actualWidth, hasWidth := validationMap["actualWidth"]; hasWidth {
+			if actualHeight, hasHeight := validationMap["actualHeight"]; hasHeight {
+				if w, ok1 := actualWidth.(float64); ok1 {
+					if h, ok2 := actualHeight.(float64); ok2 {
+						if w > 0 && h > 0 {
+							resoActual = fmt.Sprintf("%dx%d", int(w), int(h))
+						}
+					}
+				}
+			}
+		}
+
+		// Format FPS expected
+		fpsExpected := ""
+		if expectedFPS, exists := validationMap["expectedFPS"]; exists {
+			if fps, ok := expectedFPS.(float64); ok {
+				fpsExpected = strconv.Itoa(int(fps))
+			}
+		}
+
+		// Format FPS actual
+		fpsActual := ""
+		if actualFPS, exists := validationMap["actualFPS"]; exists {
+			if fps, ok := actualFPS.(float64); ok && fps > 0 {
+				fpsActual = fmt.Sprintf("%.2f", fps)
+			}
+		}
+
+		// Write CSV row with IP column
+		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual}
+		if err := writer.Write(row); err != nil {
+			return "", fmt.Errorf("failed to write CSV row for camera %s: %v", cameraID, err)
+		}
+	}
+
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", fmt.Errorf("failed to flush CSV writer: %v", err)
+	}
+
+	return csvBuilder.String(), nil
+}
+
+func convertValidationToMap(validation interface{}) (map[string]interface{}, error) {
+	// If it's already a map, return it directly
+	if validationMap, ok := validation.(map[string]interface{}); ok {
+		return validationMap, nil
+	}
+
+	// If it's an array, convert it to a map using indices as keys
+	if validationArray, ok := validation.([]interface{}); ok {
+		result := make(map[string]interface{})
+		for i, item := range validationArray {
+			if itemMap, ok := item.(map[string]interface{}); ok {
+				// Try to get camera ID from the item
+				cameraID := fmt.Sprintf("camera%d", i+1) // Default camera ID
+				if id, exists := itemMap["cameraId"]; exists {
+					if idStr, ok := id.(string); ok && idStr != "" {
+						cameraID = idStr
+					}
+				}
+				result[cameraID] = itemMap
+			} else {
+				return nil, fmt.Errorf("invalid validation item at index %d: expected object", i)
+			}
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("validation data must be either an object or an array of objects")
 }

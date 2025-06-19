@@ -16,13 +16,15 @@ import {
   OutlinedInput,
   InputAdornment,
   IconButton,
-  Snackbar
+  Snackbar,
+  Divider
 } from '@mui/material';
 import { 
   Refresh as RefreshIcon,
   Add as AddIcon,
   Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon
+  VisibilityOff as VisibilityOffIcon,
+  Upload as UploadIcon
 } from '@mui/icons-material';
 import CameraCard from '../components/CameraCard';
 import CameraConfigPanel from '../components/CameraConfigPanel';
@@ -50,10 +52,14 @@ const Dashboard = () => {
   const [newCameraURL, setNewCameraURL] = useState('');
   const [newCameraUsername, setNewCameraUsername] = useState('');
   const [newCameraPassword, setNewCameraPassword] = useState('');
-  const [newCameraIsFake, setNewCameraIsFake] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [newCameraIsFake, setNewCameraIsFake] = useState(false);  const [showPassword, setShowPassword] = useState(false);
   const [addingCamera, setAddingCamera] = useState(false);
   const [addCameraError, setAddCameraError] = useState('');
+  
+  // CSV import state
+  const [csvFile, setCsvFile] = useState(null);
+  const [importingCsv, setImportingCsv] = useState(false);
+  const [csvImportResult, setCsvImportResult] = useState(null);
   
   // Ref for error auto-hide timeout
   const errorTimeoutRef = useRef(null);
@@ -190,9 +196,12 @@ const Dashboard = () => {
     setNewCameraIsFake(false);
     setAddCameraError('');
   };
-  
-  const handleAddCameraDialogClose = () => {
+    const handleAddCameraDialogClose = () => {
     setAddCameraDialogOpen(false);
+    // Clear CSV import state
+    setCsvFile(null);
+    setCsvImportResult(null);
+    setAddCameraError('');
   };
   
   const handleAddCamera = async () => {
@@ -231,6 +240,74 @@ const Dashboard = () => {
     } finally {
       setAddingCamera(false);
     }
+  };
+
+  // CSV Import Functions
+  const handleCsvFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === 'text/csv') {
+      setCsvFile(file);
+      setCsvImportResult(null);
+      setAddCameraError('');
+    } else if (file) {
+      setAddCameraError('Please select a valid CSV file');
+      setCsvFile(null);
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!csvFile) {
+      setAddCameraError('Please select a CSV file first');
+      return;
+    }
+
+    setImportingCsv(true);
+    setAddCameraError('');
+    setCsvImportResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('csvFile', csvFile);
+
+      const response = await fetch('/api/cameras/import-csv', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok || response.status === 206) { // Success or partial success
+        setCsvImportResult(result);
+        
+        // Show success message
+        setConfigSuccess(result.message);
+        
+        // Refresh camera list
+        await fetchCameras();
+        
+        // If all cameras imported successfully, close dialog
+        if (result.errorCount === 0) {
+          setTimeout(() => {
+            setAddCameraDialogOpen(false);
+            setCsvFile(null);
+            setCsvImportResult(null);
+          }, 2000);
+        }
+      } else {
+        setAddCameraError(result.message || 'CSV import failed');
+      }
+    } catch (error) {
+      console.error('Error importing CSV:', error);
+      setAddCameraError('Failed to import CSV. Please check your file and try again.');
+    } finally {
+      setImportingCsv(false);
+    }
+  };
+
+  const handleClearCsvImport = () => {
+    setCsvFile(null);
+    setCsvImportResult(null);
+    setAddCameraError('');
   };
 
   useEffect(() => {
@@ -404,13 +481,79 @@ const Dashboard = () => {
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Add New Camera</DialogTitle>
-        <DialogContent>
+        <DialogTitle>Add New Camera</DialogTitle>        <DialogContent>
           {addCameraError && (
             <Alert severity="error" sx={{ mb: 2, mt: 1 }}>
               {addCameraError}
             </Alert>
           )}
+          
+          {csvImportResult && (
+            <Alert 
+              severity={csvImportResult.errorCount === 0 ? "success" : csvImportResult.successCount > 0 ? "warning" : "error"} 
+              sx={{ mb: 2, mt: 1 }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                {csvImportResult.message}
+              </Typography>
+              {csvImportResult.errorCount > 0 && (
+                <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                  {csvImportResult.successCount} successful, {csvImportResult.errorCount} failed
+                </Typography>
+              )}
+            </Alert>
+          )}
+
+          {/* CSV Import Section */}
+          <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'action.hover' }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+              Bulk Import from CSV
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Upload a CSV file to add multiple cameras at once. Required columns: ip, username
+            </Typography>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleCsvFileChange}
+                style={{ display: 'none' }}
+                id="csv-file-input"
+              />
+              <label htmlFor="csv-file-input">
+                <Button variant="outlined" component="span" startIcon={<UploadIcon />}>
+                  Choose CSV File
+                </Button>
+              </label>
+              {csvFile && (
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {csvFile.name}
+                </Typography>
+              )}
+              {csvFile && (
+                <Button size="small" onClick={handleClearCsvImport}>
+                  Clear
+                </Button>
+              )}
+            </Box>
+            
+            <Button
+              variant="contained"
+              onClick={handleCsvImport}
+              disabled={!csvFile || importingCsv}
+              startIcon={importingCsv ? null : <UploadIcon />}
+              fullWidth
+            >
+              {importingCsv ? 'Importing...' : 'Import CSV'}
+            </Button>
+          </Paper>
+
+          <Divider sx={{ my: 2 }}>
+            <Typography variant="caption" color="text.secondary">
+              OR ADD SINGLE CAMERA
+            </Typography>
+          </Divider>
             <TextField
             autoFocus
             margin="dense"

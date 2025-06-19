@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"main_back/internal/camera"
@@ -430,9 +431,31 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"expectedBitrate": input.Bitrate,
 			}
 		} else {
+			// Determine validation status based on business rules
+			// Resolution mismatch = failure, FPS/bitrate mismatch = warning
+			resolutionMatches := validationResult.ActualWidth > 0 && validationResult.ActualHeight > 0 &&
+				validationResult.ActualWidth == validationResult.ExpectedWidth &&
+				validationResult.ActualHeight == validationResult.ExpectedHeight
+
+			fpsMatches := validationResult.ActualFPS > 0 &&
+				int(validationResult.ActualFPS+0.5) == validationResult.ExpectedFPS
+
+			bitrateMatches := true // Default to true if no expected bitrate
+			if validationResult.ExpectedBitrate > 0 && validationResult.ActualBitrate > 0 {
+				tolerance := float64(validationResult.ExpectedBitrate) * 0.1
+				diff := float64(validationResult.ActualBitrate - validationResult.ExpectedBitrate)
+				if diff < 0 {
+					diff = -diff
+				}
+				bitrateMatches = diff <= tolerance
+			}
+
+			// Override validation result: resolution mismatch = failure, others = warning
+			overrideIsValid := resolutionMatches // Only consider valid if resolution matches
+
 			// Create a map from the validation result
 			validationMap := map[string]interface{}{
-				"isValid":         validationResult.IsValid,
+				"isValid":         overrideIsValid, // Use our override logic
 				"actualWidth":     validationResult.ActualWidth,
 				"actualHeight":    validationResult.ActualHeight,
 				"actualFPS":       validationResult.ActualFPS,
@@ -443,8 +466,32 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"expectedBitrate": validationResult.ExpectedBitrate,
 			}
 
-			// Add error if present
-			if validationResult.Error != "" {
+			// Build warning/error messages
+			var messages []string
+			if !resolutionMatches {
+				if validationResult.ActualWidth > 0 && validationResult.ActualHeight > 0 {
+					messages = append(messages, fmt.Sprintf("RESOLUTION MISMATCH: got %dx%d, expected %dx%d",
+						validationResult.ActualWidth, validationResult.ActualHeight,
+						validationResult.ExpectedWidth, validationResult.ExpectedHeight))
+				} else {
+					messages = append(messages, "RESOLUTION VALIDATION FAILED: unable to detect actual resolution")
+				}
+			}
+
+			if !fpsMatches && validationResult.ActualFPS > 0 {
+				messages = append(messages, fmt.Sprintf("FPS DIFFERENCE (warning): got %.2f fps, expected %d fps",
+					validationResult.ActualFPS, validationResult.ExpectedFPS))
+			}
+
+			if !bitrateMatches && validationResult.ExpectedBitrate > 0 && validationResult.ActualBitrate > 0 {
+				messages = append(messages, fmt.Sprintf("BITRATE DIFFERENCE (warning): got %d kbps, expected %d kbps",
+					validationResult.ActualBitrate, validationResult.ExpectedBitrate))
+			}
+
+			// Set error/warning message
+			if len(messages) > 0 {
+				validationMap["error"] = strings.Join(messages, "; ")
+			} else if validationResult.Error != "" {
 				validationMap["error"] = validationResult.Error
 			}
 

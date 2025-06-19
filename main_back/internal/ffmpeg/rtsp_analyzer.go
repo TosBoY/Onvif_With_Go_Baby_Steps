@@ -243,8 +243,8 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, 
 		result.Error = streamInfo.ErrorMsg
 		return result, nil
 	}
-
-	// Perform validation logic
+	// Perform validation logic with new business rules:
+	// Resolution mismatch = failure, FPS/bitrate mismatch = warning only
 	resolutionMatch := result.ActualWidth > 0 && result.ActualHeight > 0 &&
 		result.ActualWidth == result.ExpectedWidth && result.ActualHeight == result.ExpectedHeight
 	// Only consider FPS match if we have a valid FPS value
@@ -266,38 +266,40 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, 
 		}
 	}
 
-	// Only consider valid if we have all the necessary information
-	result.IsValid = resolutionMatch && fpsMatch && bitrateMatch
-
-	if !result.IsValid {
+	// NEW BUSINESS LOGIC: Only resolution mismatch causes failure
+	// FPS and bitrate mismatches are warnings only
+	result.IsValid = resolutionMatch // Only require resolution to match for success
+	// Generate error/warning messages with clear distinction
+	if !result.IsValid || !fpsMatch || !bitrateMatch {
 		var errors []string
 
-		// Only report resolution mismatch if we have actual values
-		if result.ActualWidth > 0 && result.ActualHeight > 0 {
-			if !resolutionMatch {
-				errors = append(errors, fmt.Sprintf("resolution mismatch: got %dx%d, expected %dx%d",
+		// Resolution mismatch = ERROR (causes failure)
+		if !resolutionMatch {
+			if result.ActualWidth > 0 && result.ActualHeight > 0 {
+				errors = append(errors, fmt.Sprintf("RESOLUTION MISMATCH (ERROR): got %dx%d, expected %dx%d",
 					result.ActualWidth, result.ActualHeight, result.ExpectedWidth, result.ExpectedHeight))
+			} else {
+				errors = append(errors, "RESOLUTION VALIDATION FAILED (ERROR): unable to detect actual resolution")
 			}
-		} else {
-			errors = append(errors, "failed to detect actual resolution")
-		}
-		// Only report FPS mismatch if we have an actual FPS value
-		if result.ActualFPS > 0 {
-			if !fpsMatch {
-				errors = append(errors, fmt.Sprintf("FPS mismatch: got %.2f, expected %d", result.ActualFPS, result.ExpectedFPS))
-			}
-		} else {
-			errors = append(errors, "failed to detect actual FPS")
 		}
 
-		// Only report bitrate mismatch if expected bitrate was provided
-		if result.ExpectedBitrate > 0 {
-			if result.ActualBitrate > 0 {
-				if !bitrateMatch {
-					errors = append(errors, fmt.Sprintf("bitrate mismatch: got %d kbps, expected %d kbps", result.ActualBitrate, result.ExpectedBitrate))
-				}
+		// FPS mismatch = WARNING (does not cause failure)
+		if !fpsMatch {
+			if result.ActualFPS > 0 {
+				errors = append(errors, fmt.Sprintf("FPS DIFFERENCE (WARNING): got %.2f fps, expected %d fps",
+					result.ActualFPS, result.ExpectedFPS))
 			} else {
-				errors = append(errors, "failed to detect actual bitrate")
+				errors = append(errors, "FPS DETECTION FAILED (WARNING): unable to detect actual FPS")
+			}
+		}
+
+		// Bitrate mismatch = WARNING (does not cause failure)
+		if !bitrateMatch && result.ExpectedBitrate > 0 {
+			if result.ActualBitrate > 0 {
+				errors = append(errors, fmt.Sprintf("BITRATE DIFFERENCE (WARNING): got %d kbps, expected %d kbps",
+					result.ActualBitrate, result.ExpectedBitrate))
+			} else {
+				errors = append(errors, "BITRATE DETECTION FAILED (WARNING): unable to detect actual bitrate")
 			}
 		}
 

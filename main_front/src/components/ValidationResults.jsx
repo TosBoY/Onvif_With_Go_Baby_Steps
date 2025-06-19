@@ -26,24 +26,12 @@ const ValidationResults = ({ validation, appliedConfig }) => {
   if (!validation) {
     return null;
   }
-
   // Check if this is a single validation result or multiple
   const isMultiple = Array.isArray(validation);
   
   // If single validation, convert to array for uniform processing
   const validations = isMultiple ? validation : [validation];
   
-  // Separate successful and failed validations
-  const successfulValidations = validations.filter(v => v.isValid);
-  const failedValidations = validations.filter(v => !v.isValid);
-
-  const getStatusIcon = (isValid) => {
-    return isValid ? (
-      <CheckCircleIcon color="success" sx={{ mr: 1 }} />
-    ) : (
-      <ErrorIcon color="error" sx={{ mr: 1 }} />
-    );
-  };
   // Function to check if resolution matches
   const resolutionMatches = (v) => {
     // If this is a fake camera, consider it matching if isValid is true
@@ -53,6 +41,7 @@ const ValidationResults = ({ validation, appliedConfig }) => {
            v.actualWidth === v.expectedWidth && 
            v.actualHeight === v.expectedHeight;
   };
+  
   // Function to check if FPS matches
   const fpsMatches = (v) => {
     // If this is a fake camera, consider it matching if isValid is true
@@ -78,34 +67,66 @@ const ValidationResults = ({ validation, appliedConfig }) => {
     // If actual bitrate is not available, we can't determine matching
     return true; // Don't flag as mismatch if we can't measure it
   };
+  
+  // Separate successful and failed validations
+  const successfulValidations = validations.filter(v => v.isValid);
+  const failedValidations = validations.filter(v => !v.isValid);
+  
+  // For multi-camera view, separate by type of issue
+  const resolutionFailures = failedValidations.filter(v => !resolutionMatches(v));
+  const warningValidations = validations.filter(v => {
+    // Include cameras that are valid but have FPS/bitrate mismatches
+    if (v.isValid && (!fpsMatches(v) || !bitrateMatches(v))) {
+      return true;
+    }
+    return false;
+  });
+
+  const getStatusIcon = (isValid) => {
+    return isValid ? (
+      <CheckCircleIcon color="success" sx={{ mr: 1 }} />
+    ) : (
+      <ErrorIcon color="error" sx={{ mr: 1 }} />    );
+  };
+  
   // Single validation result renderer with improved layout
   const renderSingleValidation = (validation) => {
     const resolutionMismatch = !resolutionMatches(validation);
     const fpsMismatch = !fpsMatches(validation);
     const bitrateMismatch = !bitrateMatches(validation);
+    
+    // Determine severity based on new business rules
+    // Resolution mismatch = error, FPS/bitrate mismatch = warning
+    const hasFpsOrBitrateWarnings = (fpsMismatch || bitrateMismatch) && validation.isValid;
+    const alertSeverity = !validation.isValid ? 'error' : hasFpsOrBitrateWarnings ? 'warning' : 'success';
 
     return (
       <Box sx={{ mb: 3 }}>        <Alert 
-          severity={validation.isValid ? 'success' : 'warning'} 
-          icon={validation.isValid ? getStatusIcon(true) : <ErrorIcon color="warning" sx={{ mr: 1 }} />}
+          severity={alertSeverity}
+          icon={validation.isValid ? 
+            (hasFpsOrBitrateWarnings ? <ErrorIcon color="warning" sx={{ mr: 1 }} /> : getStatusIcon(true)) : 
+            <ErrorIcon color="error" sx={{ mr: 1 }} />}
           sx={{ mb: 2 }}
         >
           <Box>
             <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-              {validation.isValid ? 'Validation Successful' : 'Configuration Applied with Adjustments'}
+              {!validation.isValid ? 'Validation Failed' : 
+               hasFpsOrBitrateWarnings ? 'Configuration Applied with Warnings' : 
+               'Validation Successful'}
             </Typography>
             {validation.error && (
               <Typography variant="body2" sx={{ mt: 0.5 }}>
-                The camera adjusted the requested settings to compatible values.
+                {!validation.isValid ? 
+                 'Resolution mismatch detected - configuration failed.' :
+                 'FPS or bitrate differences detected but within acceptable limits.'}
               </Typography>
             )}
           </Box>
-        </Alert>
-        
-        {!validation.isValid && (
+        </Alert>        
+        {(!validation.isValid || hasFpsOrBitrateWarnings) && (
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: '16px !important' }}>              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-                Applied Configuration Details
+                {!validation.isValid ? 'Configuration Failed - Details' : 'Configuration Warnings - Details'}
               </Typography>
               
               {resolutionMismatch && (
@@ -196,11 +217,10 @@ const ValidationResults = ({ validation, appliedConfig }) => {
             </CardContent>
           </Card>
         )}
-        
-        {validation.isValid && (
+          {validation.isValid && !hasFpsOrBitrateWarnings && (
           <Alert severity="success" sx={{ mb: 2 }}>
             <Typography variant="body2">
-              All parameters match as expected. Camera is configured correctly.
+              All parameters match exactly as expected. Camera is configured perfectly.
             </Typography>
           </Alert>
         )}
@@ -328,7 +348,8 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                 )}
               </Box>
             )}
-          </Stack>          {v.error && !v.error.includes("resolution mismatch: got") && !v.error.includes("FPS mismatch: got") && !v.error.includes("bitrate mismatch: got") && (
+          </Stack>          {v.error && !v.error.includes("resolution mismatch: got") && !v.error.includes("FPS mismatch: got") && !v.error.includes("bitrate mismatch: got") && 
+           !v.error.includes("RESOLUTION MISMATCH") && !v.error.includes("FPS DIFFERENCE") && !v.error.includes("BITRATE DIFFERENCE") && (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
               Note: {v.error}
             </Typography>
@@ -342,16 +363,21 @@ const ValidationResults = ({ validation, appliedConfig }) => {
     <Box sx={{ mt: 3 }}>
       <Typography variant="h6" gutterBottom>
         Stream Validation Results
-      </Typography>
-
-      {/* Show summary if multiple validations */}
-      {isMultiple && (        <Alert 
-          severity={failedValidations.length === 0 ? 'success' : 'info'} 
+      </Typography>      {/* Show summary if multiple validations */}
+      {isMultiple && (
+        <Alert 
+          severity={resolutionFailures.length > 0 ? 'error' : (warningValidations.length > 0 ? 'warning' : 'success')} 
           sx={{ mb: 2 }}
         >
           <Typography variant="body1">
-            {successfulValidations.length} camera(s) configured with exact settings requested. 
-            {failedValidations.length > 0 && ` ${failedValidations.length} camera(s) adjusted settings to compatible values.`}
+            {resolutionFailures.length === 0 && warningValidations.length === 0 && 
+             `${successfulValidations.length} camera(s) configured successfully with exact settings.`}
+            {resolutionFailures.length > 0 && 
+             `${resolutionFailures.length} camera(s) failed due to resolution incompatibility.`}
+            {warningValidations.length > 0 && 
+             ` ${warningValidations.length} camera(s) configured with adjusted FPS/bitrate settings.`}
+            {successfulValidations.length > 0 && (resolutionFailures.length > 0 || warningValidations.length > 0) && 
+             ` ${successfulValidations.length} camera(s) configured perfectly.`}
           </Typography>
         </Alert>
       )}
@@ -376,14 +402,29 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                 </Alert>
               </Box>
             </Grid>
-          )}          {/* Failed Validations Section - Using compact list view */}
-          {failedValidations.length > 0 && (
-            <Grid item xs={12}>              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', color: 'warning.main' }}>
-                Cameras with Adjusted Settings
+          )}          {/* Resolution Failure Section */}
+          {resolutionFailures.length > 0 && (
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', color: 'error.main' }}>
+                Failed Cameras (Resolution Incompatible)
               </Typography>
               <Paper variant="outlined">
                 <List disablePadding>
-                  {failedValidations.map((v, index) => renderFailedCamera(v, index))}
+                  {resolutionFailures.map((v, index) => renderFailedCamera(v, index))}
+                </List>
+              </Paper>
+            </Grid>
+          )}
+
+          {/* Warning Validations Section - Cameras with FPS/Bitrate adjustments */}
+          {warningValidations.length > 0 && (
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', color: 'warning.main' }}>
+                Cameras with Adjusted Settings (FPS/Bitrate)
+              </Typography>
+              <Paper variant="outlined">
+                <List disablePadding>
+                  {warningValidations.map((v, index) => renderFailedCamera(v, index))}
                 </List>
               </Paper>
             </Grid>

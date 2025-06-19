@@ -116,7 +116,37 @@ export const deleteCamera = async (cameraId) => {
       throw new Error('Network error: No response from server');
     } else {
       throw new Error(`Request error: ${error.message}`);
-    }
+    }  }
+};
+
+// Export validation results as CSV
+export const exportValidationCSV = async (validation) => {
+  try {
+    const response = await api.post('/export-validation-csv', { validation }, {
+      responseType: 'blob',
+    });
+    
+    // Create a blob from the response
+    const blob = new Blob([response.data], { type: 'text/csv' });
+    
+    // Create a temporary URL for the blob
+    const url = window.URL.createObjectURL(blob);
+    
+    // Create a temporary anchor element and trigger download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `validation_results_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    return { success: true };
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    throw new Error(`Failed to export CSV: ${error.message}`);
   }
 };
 

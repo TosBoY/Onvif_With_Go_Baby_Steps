@@ -410,13 +410,18 @@ const ValidationResults = ({ validation, appliedConfig }) => {
               </Typography>
               <Paper variant="outlined">
                 <List disablePadding>
-                  {resolutionFailures.map((v, index) => renderFailedCamera(v, index))}
+                  {resolutionFailures.slice(0, 10).map((v, index) => renderFailedCamera(v, index))}
+                  {resolutionFailures.length > 10 && (
+                    <ListItem sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                        ... and {resolutionFailures.length - 10} more camera(s) failed
+                      </Typography>
+                    </ListItem>
+                  )}
                 </List>
               </Paper>
             </Grid>
-          )}
-
-          {/* Warning Validations Section - Cameras with FPS/Bitrate adjustments */}
+          )}          {/* Warning Validations Section - Cameras with FPS/Bitrate adjustments */}
           {warningValidations.length > 0 && (
             <Grid item xs={12}>
               <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold', color: 'warning.main' }}>
@@ -424,7 +429,14 @@ const ValidationResults = ({ validation, appliedConfig }) => {
               </Typography>
               <Paper variant="outlined">
                 <List disablePadding>
-                  {warningValidations.map((v, index) => renderFailedCamera(v, index))}
+                  {warningValidations.slice(0, 10).map((v, index) => renderFailedCamera(v, index))}
+                  {warningValidations.length > 10 && (
+                    <ListItem sx={{ px: 2, py: 1.5, bgcolor: 'action.hover' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                        ... and {warningValidations.length - 10} more camera(s) with warnings
+                      </Typography>
+                    </ListItem>
+                  )}
                 </List>
               </Paper>
             </Grid>

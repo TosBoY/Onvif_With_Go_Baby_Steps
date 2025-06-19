@@ -167,4 +167,28 @@ export const testConnection = async () => {
   }
 };
 
+// Import configuration from CSV
+export const importConfigCSV = async (file) => {
+  try {
+    const formData = new FormData();
+    formData.append('csvFile', file);
+
+    const response = await api.post('/import-config-csv', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error importing config CSV:', error);
+    if (error.response) {
+      throw new Error(error.response.data.error || `Server error: ${error.response.status}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
 export default api;

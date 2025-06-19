@@ -23,7 +23,6 @@ Thumbs.db
 todolists.txt
 note
 
-
 # === IDE/Editor ===
 .idea/
 .vscode/*
@@ -44,7 +43,6 @@ main_back/go.work
 !main_back/internal/ffmpeg/**
 main_back/internal/ffmpeg/*.exe
 main_back/internal/ffmpeg/C/*.exe
-
 
 # === Frontend (main_front) ===
 main_front/node_modules/
@@ -73,8 +71,11 @@ onvif_front/yarn-error.log*
 info/backup/
 tests/
 
-
 # === FFMPEG Build ===
 /ffmpeg/
 /ffmpeg/**
 **/ffmpeg/*.exe
+
+# === Past ===
+past_implementation/
+past_implementation/**

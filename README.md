@@ -10,6 +10,7 @@ A full-stack system for configuring and monitoring ONVIF IP cameras using the ON
 ## Features
 
 - Camera management (list, add, delete)
+- **Bulk camera import via CSV upload**
 - Video configuration (resolution, FPS)
 - VLC stream launching with direct RTSP URLs
 - Camera information display with status
@@ -17,6 +18,7 @@ A full-stack system for configuring and monitoring ONVIF IP cameras using the ON
 - Two-phase configuration with validation
 - Support for real and simulated (fake) cameras
 - Stream validation with FFprobe
+- **CSV export of validation results**
 
 ## Getting Started
 
@@ -70,10 +72,11 @@ main_front/
 ## Key Features
 
 1. **Multiple Camera Support**: Configure and manage any number of ONVIF-compatible cameras
-2. **Batch Configuration**: Apply settings to multiple cameras in a single operation
-3. **Two-Phase Process**: First apply settings to all cameras, then validate all cameras
-4. **Stream Validation**: Verify actual stream parameters match requested configuration
-5. **Fake Camera Support**: Test system functionality without physical cameras
+2. **Bulk Import/Export**: Import cameras via CSV upload and export validation results
+3. **Batch Configuration**: Apply settings to multiple cameras in a single operation
+4. **Two-Phase Process**: First apply settings to all cameras, then validate all cameras
+5. **Stream Validation**: Verify actual stream parameters match requested configuration
+6. **Fake Camera Support**: Test system functionality without physical cameras
 
 ## Development
 

@@ -24,6 +24,7 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras", HandleGetCameras).Methods("GET")
 	r.HandleFunc("/cameras", HandleAddCamera).Methods("POST")
 	r.HandleFunc("/cameras/{id}", HandleDeleteCamera).Methods("DELETE")
+	r.HandleFunc("/cameras/import-csv", HandleImportCamerasCSV).Methods("POST")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
 	r.HandleFunc("/export-validation-csv", HandleExportValidationCSV).Methods("POST")
 	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
@@ -903,4 +904,202 @@ func convertValidationToMap(validation interface{}) (map[string]interface{}, err
 	}
 
 	return nil, fmt.Errorf("validation data must be either an object or an array of objects")
+}
+
+func HandleImportCamerasCSV(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /cameras/import-csv request")
+
+	// Parse multipart form with a 10MB size limit
+	err := r.ParseMultipartForm(10 << 20) // 10MB
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to parse form: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get the CSV file from the form
+	file, header, err := r.FormFile("csvFile")
+	if err != nil {
+		log.Printf("Error getting CSV file from form: %v", err)
+		http.Error(w, "CSV file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Processing CSV file: %s (size: %d bytes)", header.Filename, header.Size)
+
+	// Read and parse CSV content
+	csvReader := csv.NewReader(file)
+	csvReader.FieldsPerRecord = -1 // Allow variable number of fields
+
+	// Read all records
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		log.Printf("Error reading CSV file: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to read CSV file: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(records) == 0 {
+		log.Println("Error: CSV file is empty")
+		http.Error(w, "CSV file is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Parse header to determine column indices
+	header_row := records[0]
+	columnIndices := make(map[string]int)
+
+	for i, column := range header_row {
+		columnName := strings.ToLower(strings.TrimSpace(column))
+		columnIndices[columnName] = i
+	}
+
+	// Required columns
+	requiredColumns := []string{"ip", "username"}
+	for _, reqCol := range requiredColumns {
+		if _, exists := columnIndices[reqCol]; !exists {
+			log.Printf("Error: Required column '%s' not found in CSV", reqCol)
+			http.Error(w, fmt.Sprintf("Required column '%s' not found in CSV header", reqCol), http.StatusBadRequest)
+			return
+		}
+	}
+
+	log.Printf("CSV header parsed successfully. Found columns: %v", columnIndices)
+
+	// Process each data row
+	var results []map[string]interface{}
+	var successCount, errorCount int
+
+	for rowIndex, record := range records[1:] { // Skip header row
+		rowNum := rowIndex + 2 // +2 because we start from row 1 (skipping header) and want 1-based numbering
+
+		log.Printf("Processing row %d: %v", rowNum, record)
+
+		// Extract camera data with defaults
+		cameraData := struct {
+			IP       string
+			Port     int
+			URL      string
+			Username string
+			Password string
+			IsFake   bool
+		}{
+			Port:   80,    // Default ONVIF port
+			URL:    "",    // Default empty
+			IsFake: false, // Default to real camera
+		}
+
+		// Extract IP (required)
+		if ipIndex, exists := columnIndices["ip"]; exists && ipIndex < len(record) {
+			cameraData.IP = strings.TrimSpace(record[ipIndex])
+		}
+		if cameraData.IP == "" {
+			log.Printf("Row %d: Missing IP address", rowNum)
+			results = append(results, map[string]interface{}{
+				"row":     rowNum,
+				"success": false,
+				"error":   "Missing IP address",
+				"data":    record,
+			})
+			errorCount++
+			continue
+		}
+
+		// Extract Username (required)
+		if usernameIndex, exists := columnIndices["username"]; exists && usernameIndex < len(record) {
+			cameraData.Username = strings.TrimSpace(record[usernameIndex])
+		}
+		if cameraData.Username == "" {
+			log.Printf("Row %d: Missing username", rowNum)
+			results = append(results, map[string]interface{}{
+				"row":     rowNum,
+				"success": false,
+				"error":   "Missing username",
+				"data":    record,
+			})
+			errorCount++
+			continue
+		}
+
+		// Extract optional fields
+		if portIndex, exists := columnIndices["port"]; exists && portIndex < len(record) {
+			if portStr := strings.TrimSpace(record[portIndex]); portStr != "" {
+				if port, err := strconv.Atoi(portStr); err == nil {
+					cameraData.Port = port
+				} else {
+					log.Printf("Row %d: Invalid port value '%s', using default 80", rowNum, portStr)
+				}
+			}
+		}
+
+		if urlIndex, exists := columnIndices["url"]; exists && urlIndex < len(record) {
+			cameraData.URL = strings.TrimSpace(record[urlIndex])
+		}
+
+		if passwordIndex, exists := columnIndices["password"]; exists && passwordIndex < len(record) {
+			cameraData.Password = strings.TrimSpace(record[passwordIndex])
+		}
+
+		if fakeIndex, exists := columnIndices["isfake"]; exists && fakeIndex < len(record) {
+			if fakeStr := strings.ToLower(strings.TrimSpace(record[fakeIndex])); fakeStr != "" {
+				cameraData.IsFake = (fakeStr == "true" || fakeStr == "1" || fakeStr == "yes")
+			}
+		}
+
+		// Attempt to add the camera
+		log.Printf("Adding camera from row %d: IP=%s, Port=%d, Username=%s, IsFake=%v",
+			rowNum, cameraData.IP, cameraData.Port, cameraData.Username, cameraData.IsFake)
+
+		newID, err := camera.AddNewCamera(cameraData.IP, cameraData.Port, cameraData.URL, cameraData.Username, cameraData.Password, cameraData.IsFake)
+		if err != nil {
+			log.Printf("Row %d: Failed to add camera: %v", rowNum, err)
+			results = append(results, map[string]interface{}{
+				"row":     rowNum,
+				"success": false,
+				"error":   err.Error(),
+				"data":    record,
+				"camera":  cameraData,
+			})
+			errorCount++
+		} else {
+			log.Printf("Row %d: Successfully added camera with ID: %s", rowNum, newID)
+			results = append(results, map[string]interface{}{
+				"row":      rowNum,
+				"success":  true,
+				"cameraId": newID,
+				"camera": models.Camera{
+					ID:       newID,
+					IP:       cameraData.IP,
+					Port:     cameraData.Port,
+					URL:      cameraData.URL,
+					Username: cameraData.Username,
+					Password: cameraData.Password,
+					IsFake:   cameraData.IsFake,
+				},
+			})
+			successCount++
+		}
+	}
+
+	log.Printf("CSV import completed: %d successful, %d errors", successCount, errorCount)
+
+	// Prepare response
+	response := map[string]interface{}{
+		"message":      fmt.Sprintf("CSV import completed: %d cameras added successfully, %d errors", successCount, errorCount),
+		"totalRows":    len(records) - 1, // Exclude header
+		"successCount": successCount,
+		"errorCount":   errorCount,
+		"results":      results,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if errorCount > 0 && successCount == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+	} else if errorCount > 0 {
+		w.WriteHeader(http.StatusPartialContent) // 206 - Some succeeded, some failed
+	} else {
+		w.WriteHeader(http.StatusCreated) // 201 - All succeeded
+	}
+	json.NewEncoder(w).Encode(response)
 }

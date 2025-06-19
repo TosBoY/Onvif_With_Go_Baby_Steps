@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   Container, 
   Typography, 
@@ -35,6 +35,7 @@ const Dashboard = () => {
   const [cameras, setCameras] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showError, setShowError] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [selectedCameras, setSelectedCameras] = useState([]);
     // Add validation state
@@ -54,11 +55,33 @@ const Dashboard = () => {
   const [addingCamera, setAddingCamera] = useState(false);
   const [addCameraError, setAddCameraError] = useState('');
   
+  // Ref for error auto-hide timeout
+  const errorTimeoutRef = useRef(null);
+  
   console.log('Dashboard rendering with state:', { cameras, loading, error, selectedCamera, selectedCameras });
+  const handleSuccessfulReconnection = () => {
+    // Clear any existing error immediately when reconnection is successful
+    if (error && showError) {
+      setShowError(false);
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = null;
+      }
+    }
+    // Also call fetchCameras to refresh the camera list
+    fetchCameras();
+  };
 
   const fetchCameras = async () => {
     setLoading(true);
     setError(null);
+    setShowError(false);
+    
+    // Clear any existing error timeout
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
     
     try {
       console.log('Fetching cameras from API...');
@@ -76,8 +99,15 @@ const Dashboard = () => {
       }
     } catch (err) {
       console.error('Error fetching cameras:', err);
-      setError(err.message || 'Failed to load cameras. Please check if the backend server is running.');
+      const errorMessage = err.message || 'Failed to load cameras. Please check if the backend server is running.';
+      setError(errorMessage);
+      setShowError(true);
       setCameras([]); // Reset cameras on error
+      
+      // Auto-hide error after 8 seconds
+      errorTimeoutRef.current = setTimeout(() => {
+        setShowError(false);
+      }, 8000);
     } finally {
       setLoading(false);
     }
@@ -205,6 +235,13 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchCameras();
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
   }, []);
 
   if (loading) {
@@ -217,9 +254,7 @@ const Dashboard = () => {
         <Typography variant="h4" component="h1" gutterBottom align="center">
           ONVIF Camera Control
         </Typography>
-          <ConnectionStatus onRefresh={fetchCameras} />
-
-        {error && (
+          <ConnectionStatus onRefresh={handleSuccessfulReconnection} />        {error && showError && (
           <Alert severity="error" sx={{ mb: 4 }}>
             {error}
           </Alert>

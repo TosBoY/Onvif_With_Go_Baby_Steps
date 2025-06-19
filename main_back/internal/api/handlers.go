@@ -25,6 +25,7 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras", HandleAddCamera).Methods("POST")
 	r.HandleFunc("/cameras/{id}", HandleDeleteCamera).Methods("DELETE")
 	r.HandleFunc("/cameras/import-csv", HandleImportCamerasCSV).Methods("POST")
+	r.HandleFunc("/import-config-csv", HandleImportConfigCSV).Methods("POST")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
 	r.HandleFunc("/export-validation-csv", HandleExportValidationCSV).Methods("POST")
 	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
@@ -210,13 +211,22 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			results[cameraID] = result
 			continue
 		}
-
 		// For real cameras, proceed with config application
-		log.Printf("\n Getting profiles and configs for camera %s", cameraID)
+		log.Printf("\n Getting profiles and configs for camera %s (IP: %s:%d)", cameraID, client.Camera.IP, client.Camera.Port)
 		profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
 		if err != nil {
-			log.Printf("Failed to get camera profiles and configs for %s: %v", cameraID, err)
-			result.Error = fmt.Errorf("failed to get camera profiles and configs: %w", err)
+			log.Printf("Failed to get camera profiles and configs for %s (IP: %s:%d): %v", cameraID, client.Camera.IP, client.Camera.Port, err)
+			// Add more specific error information for network issues
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "i/o timeout") || strings.Contains(errorMsg, "dial tcp") {
+				result.Error = fmt.Errorf("network timeout: camera at %s:%d is not responding. Please check: 1) Camera is powered on and connected to network, 2) IP address %s is correct, 3) Port %d is the correct ONVIF port, 4) Camera supports ONVIF protocol", client.Camera.IP, client.Camera.Port, client.Camera.IP, client.Camera.Port)
+			} else if strings.Contains(errorMsg, "connection refused") {
+				result.Error = fmt.Errorf("connection refused: camera at %s:%d refused connection. Please check: 1) Correct ONVIF port (common ports: 80, 8080, 554), 2) ONVIF service is enabled on camera, 3) Firewall settings", client.Camera.IP, client.Camera.Port)
+			} else if strings.Contains(errorMsg, "no route to host") {
+				result.Error = fmt.Errorf("no route to host: cannot reach camera at %s:%d. Please check: 1) Camera and server are on same network, 2) IP address is correct, 3) Network routing", client.Camera.IP, client.Camera.Port)
+			} else {
+				result.Error = fmt.Errorf("failed to get camera profiles and configs: %w", err)
+			}
 			results[cameraID] = result
 			continue
 		}
@@ -522,8 +532,33 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			validationResults[cameraID] = validationMap
 		}
 	}
-
 	log.Printf("===== PHASE 2 COMPLETED =====")
+	// Log summary of configuration results
+	successCount := 0
+	failureCount := 0
+	fakeCount := 0
+
+	for _, result := range results {
+		if result.Success {
+			if result.IsFake {
+				fakeCount++
+			} else {
+				successCount++
+			}
+		} else {
+			failureCount++
+		}
+	}
+
+	log.Printf("Configuration Summary: %d successful, %d failed, %d simulated", successCount, failureCount, fakeCount)
+	if failureCount > 0 {
+		log.Printf("Failed cameras:")
+		for cameraID, result := range results {
+			if !result.Success {
+				log.Printf("  - Camera %s: %v", cameraID, result.Error)
+			}
+		}
+	}
 	log.Printf("\n")
 	// Prepare the final response
 	finalResponse := map[string]interface{}{
@@ -1102,4 +1137,183 @@ func HandleImportCamerasCSV(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated) // 201 - All succeeded
 	}
 	json.NewEncoder(w).Encode(response)
+}
+
+func HandleImportConfigCSV(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /import-config-csv request")
+
+	// Parse multipart form with a 10MB size limit
+	err := r.ParseMultipartForm(10 << 20) // 10MB
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to parse form: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get the CSV file from the form
+	file, header, err := r.FormFile("csvFile")
+	if err != nil {
+		log.Printf("Error getting CSV file from form: %v", err)
+		http.Error(w, "CSV file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Processing config CSV file: %s (size: %d bytes)", header.Filename, header.Size)
+
+	// Read and parse CSV content
+	csvReader := csv.NewReader(file)
+	csvReader.FieldsPerRecord = -1 // Allow variable number of fields
+
+	// Read all records
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		log.Printf("Error reading CSV file: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to read CSV file: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(records) == 0 {
+		log.Println("Error: CSV file is empty")
+		http.Error(w, "CSV file is empty", http.StatusBadRequest)
+		return
+	}
+
+	if len(records) < 2 {
+		log.Println("Error: CSV file must contain at least header and one data row")
+		http.Error(w, "CSV file must contain header and configuration data", http.StatusBadRequest)
+		return
+	}
+
+	// Parse header to determine column indices
+	headerRow := records[0]
+	columnIndices := make(map[string]int)
+
+	for i, column := range headerRow {
+		columnName := strings.ToLower(strings.TrimSpace(column))
+		columnIndices[columnName] = i
+	}
+
+	// Required columns (bitrate is optional)
+	requiredColumns := []string{"width", "height", "fps"}
+	for _, reqCol := range requiredColumns {
+		if _, exists := columnIndices[reqCol]; !exists {
+			log.Printf("Error: Required column '%s' not found in CSV", reqCol)
+			http.Error(w, fmt.Sprintf("Required column '%s' not found in CSV header", reqCol), http.StatusBadRequest)
+			return
+		}
+	}
+
+	log.Printf("Config CSV header parsed successfully. Found columns: %v", columnIndices)
+
+	// Process the first data row (should only be 1 row)
+	dataRow := records[1]
+	log.Printf("Processing config data row: %v", dataRow)
+
+	// Parse configuration values
+	configData := struct {
+		Width   int
+		Height  int
+		FPS     int
+		Bitrate int // Optional, defaults to 0 if not provided
+	}{
+		Bitrate: 0, // Default value for optional bitrate
+	}
+
+	// Extract Width (required)
+	if widthIndex, exists := columnIndices["width"]; exists && widthIndex < len(dataRow) {
+		widthStr := strings.TrimSpace(dataRow[widthIndex])
+		if widthStr == "" {
+			log.Println("Error: Width value is empty")
+			http.Error(w, "Width value is required", http.StatusBadRequest)
+			return
+		}
+		width, err := strconv.Atoi(widthStr)
+		if err != nil || width <= 0 {
+			log.Printf("Error: Invalid width value '%s'", widthStr)
+			http.Error(w, fmt.Sprintf("Invalid width value: %s", widthStr), http.StatusBadRequest)
+			return
+		}
+		configData.Width = width
+	} else {
+		log.Println("Error: Width column not found or empty")
+		http.Error(w, "Width value is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract Height (required)
+	if heightIndex, exists := columnIndices["height"]; exists && heightIndex < len(dataRow) {
+		heightStr := strings.TrimSpace(dataRow[heightIndex])
+		if heightStr == "" {
+			log.Println("Error: Height value is empty")
+			http.Error(w, "Height value is required", http.StatusBadRequest)
+			return
+		}
+		height, err := strconv.Atoi(heightStr)
+		if err != nil || height <= 0 {
+			log.Printf("Error: Invalid height value '%s'", heightStr)
+			http.Error(w, fmt.Sprintf("Invalid height value: %s", heightStr), http.StatusBadRequest)
+			return
+		}
+		configData.Height = height
+	} else {
+		log.Println("Error: Height column not found or empty")
+		http.Error(w, "Height value is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract FPS (required)
+	if fpsIndex, exists := columnIndices["fps"]; exists && fpsIndex < len(dataRow) {
+		fpsStr := strings.TrimSpace(dataRow[fpsIndex])
+		if fpsStr == "" {
+			log.Println("Error: FPS value is empty")
+			http.Error(w, "FPS value is required", http.StatusBadRequest)
+			return
+		}
+		fps, err := strconv.Atoi(fpsStr)
+		if err != nil || fps <= 0 {
+			log.Printf("Error: Invalid FPS value '%s'", fpsStr)
+			http.Error(w, fmt.Sprintf("Invalid FPS value: %s", fpsStr), http.StatusBadRequest)
+			return
+		}
+		configData.FPS = fps
+	} else {
+		log.Println("Error: FPS column not found or empty")
+		http.Error(w, "FPS value is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract Bitrate (optional)
+	if bitrateIndex, exists := columnIndices["bitrate"]; exists && bitrateIndex < len(dataRow) {
+		bitrateStr := strings.TrimSpace(dataRow[bitrateIndex])
+		if bitrateStr != "" {
+			bitrate, err := strconv.Atoi(bitrateStr)
+			if err != nil || bitrate < 0 {
+				log.Printf("Warning: Invalid bitrate value '%s', using default 0", bitrateStr)
+			} else {
+				configData.Bitrate = bitrate
+			}
+		}
+	}
+
+	log.Printf("Parsed config from CSV: Width=%d, Height=%d, FPS=%d, Bitrate=%d",
+		configData.Width, configData.Height, configData.FPS, configData.Bitrate)
+
+	// Prepare response with parsed configuration
+	response := map[string]interface{}{
+		"message": "Configuration CSV imported successfully",
+		"config": map[string]interface{}{
+			"width":   configData.Width,
+			"height":  configData.Height,
+			"fps":     configData.FPS,
+			"bitrate": configData.Bitrate,
+		},
+		"status": "ready_to_apply",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+
+	log.Printf("Config CSV import completed successfully: %+v", configData)
 }

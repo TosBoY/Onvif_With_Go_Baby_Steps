@@ -8,9 +8,15 @@ import {
   Paper, 
   CircularProgress,
   Alert,
-  Grid
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider
 } from '@mui/material';
-import { applyConfig } from '../services/api';
+import { Upload as UploadIcon } from '@mui/icons-material';
+import { applyConfig, importConfigCSV } from '../services/api';
 
 // Common resolution presets
 const resolutions = [
@@ -40,6 +46,12 @@ const CameraConfigPanel = ({
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState({ success: false, message: null });
 
+  // CSV Config Upload state
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [configCsvFile, setConfigCsvFile] = useState(null);
+  const [uploadingConfig, setUploadingConfig] = useState(false);
+  const [uploadResult, setUploadResult] = useState(null);
+
   const handleResolutionChange = (event) => {
     const selectedResolution = JSON.parse(event.target.value);
     setWidth(selectedResolution.width);
@@ -61,7 +73,6 @@ const CameraConfigPanel = ({
       setFps(value);
     }
   };
-
   const handleBitrateChange = (event) => {
     const value = event.target.value;
     // Allow empty string for clearing the field
@@ -76,6 +87,176 @@ const CameraConfigPanel = ({
     } else {
       // Allow partial input (like just typing numbers)
       setBitrate(value);
+    }
+  };
+
+  // CSV Upload handlers
+  const handleUploadDialogOpen = () => {
+    setUploadDialogOpen(true);
+    setConfigCsvFile(null);
+    setUploadResult(null);
+  };
+
+  const handleUploadDialogClose = () => {
+    setUploadDialogOpen(false);
+    setConfigCsvFile(null);
+    setUploadResult(null);
+  };
+  const handleConfigCsvFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setConfigCsvFile(file);
+      setUploadResult(null);
+      setUploadingConfig(true);
+
+      try {
+        // Automatically scan the CSV file when selected
+        const data = await importConfigCSV(file);
+        
+        if (data && data.config) {
+          setUploadResult({ 
+            success: true, 
+            message: 'Configuration scanned successfully!',
+            config: data.config
+          });
+        } else {
+          setUploadResult({ 
+            success: false, 
+            message: 'Failed to parse configuration from CSV' 
+          });
+        }
+      } catch (error) {
+        console.error('Error scanning config CSV:', error);
+        setUploadResult({ 
+          success: false, 
+          message: error.message || 'Failed to scan CSV file' 
+        });
+      } finally {
+        setUploadingConfig(false);
+      }
+    } else {
+      setConfigCsvFile(null);
+      setUploadResult(null);
+    }
+  };
+
+  const handleUploadConfig = async () => {
+    // This function is no longer needed since we scan automatically
+    // But keeping it for backward compatibility
+    return;
+  };  const handleApplyUploadedConfig = async () => {
+    if (uploadResult && uploadResult.config) {
+      const config = uploadResult.config;
+      setWidth(config.width);
+      setHeight(config.height);
+      setFps(config.fps);
+      setBitrate(config.bitrate || '');
+      handleUploadDialogClose();
+      
+      // If cameras are selected, apply the configuration immediately
+      if (selectedCameras.length > 0) {
+        // Clear previous validation results
+        if (onClearValidation) {
+          onClearValidation();
+        }
+
+        setIsLoading(true);
+        setResult({ 
+          success: true, 
+          message: `Applying configuration from CSV to ${selectedCameras.length} camera(s)... This may take a while as cameras need time to update and validate settings.`
+        });
+
+        try {
+          // Apply the configuration using the same logic as handleApplyConfig
+          const batchResult = await applyConfig(selectedCameras, config.width, config.height, config.fps, config.bitrate || 0);
+          console.log('Batch configuration result from CSV:', batchResult);
+
+          // Process response - extract validation results
+          const validations = [];
+          const successfulCameras = [];
+          const failedCameras = [];
+
+          if (batchResult && batchResult.results) {
+            Object.entries(batchResult.results).forEach(([cameraId, result]) => {
+              if (result.success) {
+                successfulCameras.push(cameraId);
+                
+                if (result.validation) {
+                  const validationData = {
+                    ...result.validation,
+                    cameraId,
+                    expectedWidth: config.width,
+                    expectedHeight: config.height,
+                    expectedFPS: config.fps,
+                    expectedBitrate: config.bitrate || 0
+                  };
+                  
+                  if (result.isFake) {
+                    validationData.isValid = true;
+                  }
+                  
+                  validations.push(validationData);
+                }
+              } else {
+                failedCameras.push({
+                  cameraId,
+                  error: result.error || 'Unknown error'
+                });
+              }
+            });
+          }
+          
+          // Pass validation results back to Dashboard
+          if (onConfigurationApplied && validations.length > 0) {
+            const compositeResult = {
+              validation: validations,
+              appliedConfig: {
+                resolution: { width: config.width, height: config.height },
+                fps: config.fps,
+                bitrate: config.bitrate || 0
+              }
+            };
+            onConfigurationApplied(compositeResult);
+          }
+          
+          // Show final results summary
+          if (failedCameras.length === 0) {
+            setResult({ 
+              success: true, 
+              message: `CSV configuration applied successfully to ${successfulCameras.length} camera(s): ${successfulCameras.join(', ')}` 
+            });
+          } else if (successfulCameras.length > 0) {
+            const successMessage = `Applied to cameras ${successfulCameras.join(', ')}`;
+            const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+            
+            setResult({ 
+              success: false, 
+              message: `Partial success: ${successMessage}. Failed cameras: ${errorDetails}` 
+            });
+          } else {
+            const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+            
+            setResult({ 
+              success: false, 
+              message: `Failed to apply CSV configuration to any cameras. Errors: ${errorDetails}` 
+            });
+          }
+        } catch (error) {
+          console.error('Error applying CSV configuration:', error);
+          setResult({ 
+            success: false, 
+            message: `CSV configuration failed: ${error.message}` 
+          });
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        // No cameras selected, just show that configuration was loaded
+        setResult({ 
+          success: true, 
+          message: `Configuration loaded from CSV: ${config.width}x${config.height}, ${config.fps} FPS, ${config.bitrate || 'Auto'} kbps. Select cameras to apply configuration.` 
+        });
+      }
     }
   };
   const handleApplyConfig = async () => {
@@ -209,12 +390,21 @@ const CameraConfigPanel = ({
     } finally {
       setIsLoading(false);
     }
-  };
-  return (
+  };  return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h6" gutterBottom>
-        Camera Configuration
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h6">
+          Camera Configuration
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<UploadIcon />}
+          onClick={handleUploadDialogOpen}
+          size="small"
+        >
+          Upload Config
+        </Button>
+      </Box>
         <Grid container spacing={2}>
         <Grid item xs={12} md={6}>
           <TextField
@@ -289,8 +479,7 @@ const CameraConfigPanel = ({
             to complete as each camera requires time to validate the settings.
           </Typography>
         </Alert>
-      )}
-        {result.message && (
+      )}        {result.message && (
         <Alert 
           severity={result.success ? 'success' : 'error'} 
           sx={{ mt: 2 }}
@@ -299,8 +488,108 @@ const CameraConfigPanel = ({
           {result.message}
         </Alert>
       )}
-        {/* Configuration controls remain, but the summary section is removed */}
-      </Box>
+        
+      {/* Upload Config Dialog */}      <Dialog 
+        open={uploadDialogOpen} 
+        onClose={handleUploadDialogClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Upload Configuration CSV</DialogTitle>        <DialogContent>
+          {uploadResult && (
+            <Alert 
+              severity={uploadResult.success ? "success" : "error"} 
+              sx={{ mb: 2, mt: 1 }}
+            >
+              {uploadResult.message}
+            </Alert>
+          )}
+
+          {isLoading && selectedCameras.length > 0 && (
+            <Alert severity="info" sx={{ mb: 2, mt: 1 }}>
+              <Typography variant="body2">
+                Applying CSV configuration to {selectedCameras.length} camera(s)... This may take up to 
+                {selectedCameras.length > 1 ? ` ${selectedCameras.length * 20} seconds ` : ' 20 seconds '}
+                to complete.
+              </Typography>
+            </Alert>
+          )}
+
+          {uploadResult && uploadResult.success && uploadResult.config && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'action.hover' }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                Scanned Configuration:
+              </Typography>
+              <Typography variant="body2">
+                <strong>Resolution:</strong> {uploadResult.config.width}x{uploadResult.config.height}
+              </Typography>
+              <Typography variant="body2">
+                <strong>FPS:</strong> {uploadResult.config.fps}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Bitrate:</strong> {uploadResult.config.bitrate || 'Auto'} kbps
+              </Typography>
+              {selectedCameras.length > 0 && (
+                <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic' }}>
+                  Will be applied to {selectedCameras.length} selected camera(s)
+                </Typography>
+              )}
+            </Paper>
+          )}
+
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover' }}>
+            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+              CSV File Upload
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Upload a CSV file with configuration parameters. Required columns: width, height, fps. Optional: bitrate
+              <br />
+              <em>File will be automatically scanned when selected.</em>
+            </Typography>
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleConfigCsvFileChange}
+                style={{ display: 'none' }}
+                id="config-csv-file-input"
+              />
+              <label htmlFor="config-csv-file-input">
+                <Button 
+                  variant="outlined" 
+                  component="span" 
+                  startIcon={uploadingConfig ? <CircularProgress size={16} /> : <UploadIcon />}
+                  disabled={uploadingConfig}
+                >
+                  {uploadingConfig ? 'Scanning...' : 'Choose CSV File'}
+                </Button>
+              </label>
+              {configCsvFile && !uploadingConfig && (
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {configCsvFile.name}
+                </Typography>
+              )}
+            </Box>
+          </Paper>
+        </DialogContent>        <DialogActions>
+          <Button onClick={handleUploadDialogClose} disabled={isLoading}>
+            Cancel
+          </Button>
+          {uploadResult && uploadResult.success && uploadResult.config && (
+            <Button 
+              onClick={handleApplyUploadedConfig}
+              variant="contained"
+              color="primary"
+              disabled={isLoading}
+              startIcon={isLoading ? <CircularProgress size={16} /> : null}
+            >
+              {isLoading ? 'Applying...' : 'Apply Configuration'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 };
 

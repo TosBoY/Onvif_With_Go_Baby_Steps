@@ -1,0 +1,4 @@
+ip,username,password,port,isfake
+192.168.1.50,admin,password123,80,false
+192.168.1.51,user,pass456,8080,false
+192.168.1.52,admin,,80,true

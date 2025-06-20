@@ -1,0 +1,40 @@
+{
+  "cameras": [
+    {
+      "id": "1",
+      "ip": "192.168.1.12",
+      "port": 80,
+      "url": "",
+      "username": "admin",
+      "password": "admin123",
+      "isFake": false
+    },
+    {
+      "id": "2",
+      "ip": "192.168.1.30",
+      "port": 0,
+      "url": "",
+      "username": "admin",
+      "password": "Admin123",
+      "isFake": false
+    },
+    {
+      "id": "3",
+      "ip": "192.168.1.31",
+      "port": 80,
+      "url": "",
+      "username": "admin",
+      "password": "Admin123",
+      "isFake": false
+    },
+    {
+      "id": "4",
+      "ip": "192.168.1.15",
+      "port": 0,
+      "url": "",
+      "username": "admin",
+      "password": "Admin123",
+      "isFake": true
+    }
+  ]
+}

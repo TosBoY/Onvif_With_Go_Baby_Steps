@@ -26,7 +26,8 @@ import {
   VisibilityOff as VisibilityOffIcon,
   Upload as UploadIcon,
   Settings as SettingsIcon,
-  CameraAlt as CameraIcon
+  CameraAlt as CameraIcon,
+  Delete as DeleteIcon
 } from '@mui/icons-material';
 import CameraCard from '../components/CameraCard';
 import CameraConfigPanel from '../components/CameraConfigPanel';
@@ -64,12 +65,15 @@ const Dashboard = () => {
   
   // Manage dialog state
   const [manageDialogOpen, setManageDialogOpen] = useState(false);
-  
-  // Choose cameras state
+    // Choose cameras state
   const [chooseCamerasDialogOpen, setChooseCamerasDialogOpen] = useState(false);
   const [chooseCamerasFile, setChooseCamerasFile] = useState(null);
   const [choosingCameras, setChoosingCameras] = useState(false);
   const [chooseCamerasResult, setChooseCamerasResult] = useState(null);
+  
+  // Delete cameras state
+  const [deleteCamerasDialogOpen, setDeleteCamerasDialogOpen] = useState(false);
+  const [deletingCameras, setDeletingCameras] = useState(false);
   
   // Ref for error auto-hide timeout
   const errorTimeoutRef = useRef(null);
@@ -399,10 +403,57 @@ const Dashboard = () => {
     // Close the dialog
     setChooseCamerasDialogOpen(false);
   };
-
   const handleClearChooseCameras = () => {
     setChooseCamerasFile(null);
     setChooseCamerasResult(null);
+  };
+
+  // Delete cameras dialog handlers
+  const handleOpenDeleteCameras = () => {
+    setManageDialogOpen(false);
+    setDeleteCamerasDialogOpen(true);
+  };
+
+  const handleDeleteCamerasDialogClose = () => {
+    setDeleteCamerasDialogOpen(false);
+  };
+  const handleDeleteSelectedCameras = async () => {
+    if (selectedCameras.length === 0) {
+      alert('No cameras selected for deletion');
+      return;
+    }
+
+    setDeletingCameras(true);
+
+    try {
+      // Delete cameras sequentially to avoid race conditions
+      for (const cameraId of selectedCameras) {
+        const response = await fetch(`/api/cameras/${cameraId}`, {
+          method: 'DELETE',
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`Failed to delete camera ${cameraId}: ${errorData.message || 'Unknown error'}`);
+        }
+      }
+
+      // Clear selected cameras and refresh the list
+      setSelectedCameras([]);
+      setConfigSuccess(`Successfully deleted ${selectedCameras.length} cameras`);
+      
+      // Refresh camera list
+      await fetchCameras();
+      
+      // Close dialog
+      setDeleteCamerasDialogOpen(false);
+
+    } catch (error) {
+      console.error('Error deleting cameras:', error);
+      alert(`Failed to delete cameras: ${error.message}`);
+    } finally {
+      setDeletingCameras(false);
+    }
   };
 
   useEffect(() => {
@@ -606,8 +657,7 @@ const Dashboard = () => {
                 </Typography>
               </Box>
             </Button>
-            
-            <Button
+              <Button
               variant="outlined"
               startIcon={<CameraIcon />}
               onClick={handleOpenChooseCameras}
@@ -620,6 +670,24 @@ const Dashboard = () => {
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   Select cameras from CSV for configuration
+                </Typography>
+              </Box>
+            </Button>
+            
+            <Button
+              variant="outlined"
+              startIcon={<DeleteIcon />}
+              onClick={handleOpenDeleteCameras}
+              fullWidth
+              sx={{ justifyContent: 'flex-start', py: 1.5 }}
+              color="error"
+            >
+              <Box sx={{ textAlign: 'left' }}>
+                <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                  Delete Cameras
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Delete selected cameras from the list
                 </Typography>
               </Box>
             </Button>
@@ -749,6 +817,78 @@ const Dashboard = () => {
               color="primary"
             >
               Accept Selected Cameras ({chooseCamerasResult.selectedCameras.length})
+            </Button>
+          )}        </DialogActions>
+      </Dialog>
+
+      {/* Delete Cameras Dialog */}
+      <Dialog 
+        open={deleteCamerasDialogOpen} 
+        onClose={handleDeleteCamerasDialogClose}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Delete Selected Cameras</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Are you sure you want to delete the selected cameras? This action cannot be undone.
+          </Typography>
+          
+          {selectedCameras.length > 0 ? (
+            <Box>
+              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                Cameras to be deleted ({selectedCameras.length}):
+              </Typography>
+              <Box sx={{ 
+                maxHeight: 200, 
+                overflowY: 'auto', 
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                p: 2,
+                mb: 2
+              }}>
+                {selectedCameras.map((cameraId) => {
+                  const camera = cameras.find(c => c.id === cameraId);
+                  return (
+                    <Box key={cameraId} sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                        {camera ? camera.ip : 'Unknown IP'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        ID: {cameraId}
+                      </Typography>
+                    </Box>
+                  );
+                })}
+              </Box>
+              
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  <strong>Warning:</strong> This will permanently remove these cameras from your system. 
+                  You will need to add them again if you want to use them in the future.
+                </Typography>
+              </Alert>
+            </Box>
+          ) : (
+            <Alert severity="info">
+              <Typography variant="body2">
+                No cameras are currently selected. Please select cameras from the main list before using the delete function.
+              </Typography>
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCamerasDialogClose}>Cancel</Button>
+          {selectedCameras.length > 0 && (
+            <Button 
+              variant="contained" 
+              color="error"
+              onClick={handleDeleteSelectedCameras}
+              disabled={deletingCameras}
+            >
+              {deletingCameras ? 'Deleting...' : `Delete ${selectedCameras.length} Cameras`}
             </Button>
           )}
         </DialogActions>

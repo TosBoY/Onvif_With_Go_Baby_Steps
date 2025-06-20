@@ -404,8 +404,7 @@ const CameraConfigPanel = ({
         >
           Upload Config
         </Button>
-      </Box>
-        <Grid container spacing={2}>
+      </Box>        <Grid container spacing={1} sx={{ mt: 1 }}>
         <Grid item xs={12} md={6}>
           <TextField
             select
@@ -413,7 +412,7 @@ const CameraConfigPanel = ({
             value={JSON.stringify({ width, height })}
             onChange={handleResolutionChange}
             fullWidth
-            margin="normal"
+            margin="dense"
           >
             {resolutions.map((resolution) => (
               <MenuItem key={resolution.label} value={JSON.stringify({ width: resolution.width, height: resolution.height })}>
@@ -430,7 +429,7 @@ const CameraConfigPanel = ({
             value={fps}
             onChange={handleFpsChange}
             fullWidth
-            margin="normal"
+            margin="dense"
             InputProps={{
               inputProps: { min: 1, max: 60 },
               sx: { color: 'white' }
@@ -438,7 +437,7 @@ const CameraConfigPanel = ({
           />
         </Grid>
 
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={6} sx={{ mt: -1 }}>
           <TextField
             label="Bitrate (kbps)"
             type="number"
@@ -446,7 +445,7 @@ const CameraConfigPanel = ({
             onChange={handleBitrateChange}
             placeholder="Auto (leave empty for camera default)"
             fullWidth
-            margin="normal"
+            margin="dense"
             helperText="Leave empty to use camera's default bitrate range"
             InputProps={{
               inputProps: { min: 1 },

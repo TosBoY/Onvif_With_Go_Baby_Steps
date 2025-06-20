@@ -24,7 +24,9 @@ import {
   Add as AddIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
-  Upload as UploadIcon
+  Upload as UploadIcon,
+  Settings as SettingsIcon,
+  CameraAlt as CameraIcon
 } from '@mui/icons-material';
 import CameraCard from '../components/CameraCard';
 import CameraConfigPanel from '../components/CameraConfigPanel';
@@ -55,11 +57,19 @@ const Dashboard = () => {
   const [newCameraIsFake, setNewCameraIsFake] = useState(false);  const [showPassword, setShowPassword] = useState(false);
   const [addingCamera, setAddingCamera] = useState(false);
   const [addCameraError, setAddCameraError] = useState('');
-  
-  // CSV import state
+    // CSV import state
   const [csvFile, setCsvFile] = useState(null);
   const [importingCsv, setImportingCsv] = useState(false);
   const [csvImportResult, setCsvImportResult] = useState(null);
+  
+  // Manage dialog state
+  const [manageDialogOpen, setManageDialogOpen] = useState(false);
+  
+  // Choose cameras state
+  const [chooseCamerasDialogOpen, setChooseCamerasDialogOpen] = useState(false);
+  const [chooseCamerasFile, setChooseCamerasFile] = useState(null);
+  const [choosingCameras, setChoosingCameras] = useState(false);
+  const [chooseCamerasResult, setChooseCamerasResult] = useState(null);
   
   // Ref for error auto-hide timeout
   const errorTimeoutRef = useRef(null);
@@ -303,11 +313,96 @@ const Dashboard = () => {
       setImportingCsv(false);
     }
   };
-
   const handleClearCsvImport = () => {
     setCsvFile(null);
     setCsvImportResult(null);
     setAddCameraError('');
+  };
+
+  // Manage dialog handlers
+  const handleManageDialogOpen = () => {
+    setManageDialogOpen(true);
+  };
+
+  const handleManageDialogClose = () => {
+    setManageDialogOpen(false);
+  };
+
+  const handleOpenAddCamera = () => {
+    setManageDialogOpen(false);
+    handleAddCameraDialogOpen();
+  };
+
+  const handleOpenChooseCameras = () => {
+    setManageDialogOpen(false);
+    setChooseCamerasDialogOpen(true);
+    setChooseCamerasFile(null);
+    setChooseCamerasResult(null);
+  };
+
+  // Choose cameras dialog handlers
+  const handleChooseCamerasDialogClose = () => {
+    setChooseCamerasDialogOpen(false);
+    setChooseCamerasFile(null);
+    setChooseCamerasResult(null);
+  };
+  const handleChooseCamerasFileChange = async (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === 'text/csv') {
+      setChooseCamerasFile(file);
+      setChooseCamerasResult(null);
+      
+      // Automatically process the file
+      await processChooseCamerasFile(file);
+    } else if (file) {
+      alert('Please select a valid CSV file');
+      setChooseCamerasFile(null);
+    }
+  };
+
+  const processChooseCamerasFile = async (file) => {
+    setChoosingCameras(true);
+    setChooseCamerasResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('csvFile', file);
+
+      const response = await fetch('/api/import-cameras-for-config', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (response.ok || response.status === 206) { // Success or partial success
+        setChooseCamerasResult(result);
+      } else {
+        alert(result.message || 'Failed to process camera selection');
+      }
+    } catch (error) {
+      console.error('Error processing camera selection:', error);
+      alert('Failed to process camera selection. Please check your file and try again.');
+    } finally {
+      setChoosingCameras(false);
+    }
+  };  const handleAcceptSelectedCameras = () => {
+    if (!chooseCamerasResult || !chooseCamerasResult.selectedCameraIds) {
+      alert('No cameras selected');
+      return;
+    }
+
+    // Update the selected cameras in the main view
+    setSelectedCameras(chooseCamerasResult.selectedCameraIds);
+    setConfigSuccess(`Selected ${chooseCamerasResult.selectedCameraIds.length} cameras for configuration`);
+    
+    // Close the dialog
+    setChooseCamerasDialogOpen(false);
+  };
+
+  const handleClearChooseCameras = () => {
+    setChooseCamerasFile(null);
+    setChooseCamerasResult(null);
   };
 
   useEffect(() => {
@@ -395,24 +490,33 @@ const Dashboard = () => {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Select cameras to apply configuration to. Multiple cameras can be selected.
               </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Box>
-                  <Button
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>                <Box>
+                  <Button 
+                    variant="contained" 
+                    color="primary"
+                    startIcon={<SettingsIcon />}
+                    onClick={handleManageDialogOpen}
+                    sx={{ mr: 1 }}
+                  >
+                    Manage
+                  </Button>                  <Button
                     variant="outlined"
+                    color={selectedCameras.length === cameras.length ? "warning" : "primary"}
                     onClick={handleSelectDeselectAll}
                     disabled={cameras.length === 0}
                     sx={{ mr: 1 }}
                   >
                     {selectedCameras.length === cameras.length ? 'Deselect All' : 'Select All'}
                   </Button>
-                  <Button 
-                    variant="contained" 
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={handleAddCameraDialogOpen}
-                  >
-                    Add Camera
-                  </Button>
+                  {selectedCameras.length > 0 && selectedCameras.length < cameras.length && (
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      onClick={() => setSelectedCameras([])}
+                    >
+                      Deselect ({selectedCameras.length})
+                    </Button>
+                  )}
                 </Box>
                 <Button 
                   variant="outlined" 
@@ -422,10 +526,8 @@ const Dashboard = () => {
                 >
                   Refresh
                 </Button>
-              </Box>
-
-              {!error && cameras.length === 0 && (
-                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: '#f5f5f5' }}>
+              </Box>              {!error && cameras.length === 0 && (
+                <Paper sx={{ p: 3, textAlign: 'center', bgcolor: 'background.paper' }}>
                   <Typography variant="h6" gutterBottom>
                     No cameras found
                   </Typography>
@@ -473,6 +575,184 @@ const Dashboard = () => {
             </Paper>
           </Box>        )}
       </Box>
+      
+      {/* Manage Dialog */}
+      <Dialog 
+        open={manageDialogOpen} 
+        onClose={handleManageDialogClose}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Manage Cameras</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Choose an option to manage your cameras:
+          </Typography>
+          
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={handleOpenAddCamera}
+              fullWidth
+              sx={{ justifyContent: 'flex-start', py: 1.5 }}
+            >
+              <Box sx={{ textAlign: 'left' }}>
+                <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                  Add Camera
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Add individual cameras or import from CSV
+                </Typography>
+              </Box>
+            </Button>
+            
+            <Button
+              variant="outlined"
+              startIcon={<CameraIcon />}
+              onClick={handleOpenChooseCameras}
+              fullWidth
+              sx={{ justifyContent: 'flex-start', py: 1.5 }}
+            >
+              <Box sx={{ textAlign: 'left' }}>
+                <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+                  Choose Cameras
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Select cameras from CSV for configuration
+                </Typography>
+              </Box>
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleManageDialogClose}>Cancel</Button>
+        </DialogActions>
+      </Dialog>      {/* Choose Cameras Dialog */}
+      <Dialog 
+        open={chooseCamerasDialogOpen} 
+        onClose={handleChooseCamerasDialogClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>Choose Cameras for Configuration</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Upload a CSV file with camera IP addresses to select them for configuration.
+          </Typography>
+          
+          {chooseCamerasResult && (
+            <Alert 
+              severity={chooseCamerasResult.unmatchedCount === 0 ? "success" : chooseCamerasResult.matchedCount > 0 ? "warning" : "error"} 
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                {chooseCamerasResult.message}
+              </Typography>
+              {chooseCamerasResult.unmatchedCount > 0 && (
+                <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
+                  {chooseCamerasResult.matchedCount} matched, {chooseCamerasResult.unmatchedCount} not found
+                </Typography>
+              )}
+            </Alert>
+          )}
+
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <input
+                type="file"
+                accept=".csv"
+                onChange={handleChooseCamerasFileChange}
+                style={{ display: 'none' }}
+                id="choose-cameras-csv-input"
+              />
+              <label htmlFor="choose-cameras-csv-input">
+                <Button variant="outlined" component="span" startIcon={<UploadIcon />}>
+                  Choose CSV File
+                </Button>
+              </label>
+              {chooseCamerasFile && (
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {chooseCamerasFile.name}                </Typography>
+              )}
+              {chooseCamerasFile && (
+                <Button size="small" onClick={handleClearChooseCameras}>
+                  Clear
+                </Button>
+              )}
+            </Box>
+            
+            {choosingCameras && (
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', py: 2 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Processing CSV file...
+                </Typography>
+              </Box>
+            )}
+          </Paper>
+
+          {/* Selected Cameras Display */}
+          {chooseCamerasResult && chooseCamerasResult.selectedCameras && chooseCamerasResult.selectedCameras.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: 'success.main' }}>
+                Selected Cameras ({chooseCamerasResult.selectedCameras.length})
+              </Typography>
+              <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                {chooseCamerasResult.selectedCameras.map((camera, index) => (
+                  <Box key={camera.id || index} sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center',
+                    py: 1,
+                    borderBottom: index < chooseCamerasResult.selectedCameras.length - 1 ? '1px solid' : 'none',
+                    borderBottomColor: 'divider'
+                  }}>
+                    <Typography variant="body2">
+                      {camera.ip}:{camera.port}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      ID: {camera.id}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Paper>
+          )}
+
+          {/* Unmatched IPs Display */}
+          {chooseCamerasResult && chooseCamerasResult.unmatchedIPs && chooseCamerasResult.unmatchedIPs.length > 0 && (
+            <Paper variant="outlined" sx={{ p: 2, mb: 2, borderColor: 'warning.main' }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: 'warning.main' }}>
+                Unmatched IP Addresses ({chooseCamerasResult.unmatchedIPs.length})
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                These IP addresses were not found in your camera list:
+              </Typography>
+              <Box sx={{ maxHeight: 150, overflowY: 'auto' }}>
+                {chooseCamerasResult.unmatchedIPs.map((ip, index) => (
+                  <Typography key={index} variant="body2" sx={{ 
+                    py: 0.5,
+                    color: 'warning.main',
+                    fontFamily: 'monospace'
+                  }}>
+                    {ip}
+                  </Typography>
+                ))}
+              </Box>
+            </Paper>
+          )}        </DialogContent>        <DialogActions>
+          <Button onClick={handleChooseCamerasDialogClose}>Close</Button>
+          {chooseCamerasResult && chooseCamerasResult.selectedCameras && chooseCamerasResult.selectedCameras.length > 0 && (
+            <Button 
+              variant="contained" 
+              onClick={handleAcceptSelectedCameras}
+              color="primary"
+            >
+              Accept Selected Cameras ({chooseCamerasResult.selectedCameras.length})
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
       
       {/* Add Camera Dialog */}
       <Dialog 

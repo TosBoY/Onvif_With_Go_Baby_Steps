@@ -26,6 +26,7 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras/{id}", HandleDeleteCamera).Methods("DELETE")
 	r.HandleFunc("/cameras/import-csv", HandleImportCamerasCSV).Methods("POST")
 	r.HandleFunc("/import-config-csv", HandleImportConfigCSV).Methods("POST")
+	r.HandleFunc("/import-cameras-for-config", HandleImportCamerasForConfig).Methods("POST")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
 	r.HandleFunc("/export-validation-csv", HandleExportValidationCSV).Methods("POST")
 	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
@@ -1316,4 +1317,161 @@ func HandleImportConfigCSV(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 
 	log.Printf("Config CSV import completed successfully: %+v", configData)
+}
+
+func HandleImportCamerasForConfig(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /import-cameras-for-config request")
+
+	// Parse multipart form with a 10MB size limit
+	err := r.ParseMultipartForm(10 << 20) // 10MB
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to parse form: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get the CSV file from the form
+	file, header, err := r.FormFile("csvFile")
+	if err != nil {
+		log.Printf("Error getting CSV file from form: %v", err)
+		http.Error(w, "CSV file is required", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Processing camera selection CSV file: %s (size: %d bytes)", header.Filename, header.Size)
+
+	// Read and parse CSV content
+	csvReader := csv.NewReader(file)
+	csvReader.FieldsPerRecord = -1 // Allow variable number of fields
+
+	// Read all records
+	records, err := csvReader.ReadAll()
+	if err != nil {
+		log.Printf("Error reading CSV file: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to read CSV file: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if len(records) == 0 {
+		log.Println("Error: CSV file is empty")
+		http.Error(w, "CSV file is empty", http.StatusBadRequest)
+		return
+	}
+
+	// Parse header to find the IP column
+	headerRow := records[0]
+	ipColumnIndex := -1
+
+	for i, column := range headerRow {
+		columnName := strings.ToLower(strings.TrimSpace(column))
+		if columnName == "ip" {
+			ipColumnIndex = i
+			break
+		}
+	}
+
+	if ipColumnIndex == -1 {
+		log.Println("Error: 'ip' column not found in CSV header")
+		http.Error(w, "Required column 'ip' not found in CSV header", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Found IP column at index %d", ipColumnIndex)
+
+	// Load existing cameras to match IPs with camera IDs
+	cameras, err := config.LoadCameraList()
+	if err != nil {
+		log.Printf("Error loading camera list: %v", err)
+		http.Error(w, "Failed to load camera list", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a map of IP to camera ID for quick lookup
+	ipToCameraMap := make(map[string]string)
+	for _, camera := range cameras {
+		ipToCameraMap[camera.IP] = camera.ID
+	}
+
+	// Process each data row to extract IPs and find matching cameras
+	var selectedCameraIDs []string
+	var matchedCameras []models.Camera
+	var unmatchedIPs []string
+	var invalidRows []map[string]interface{}
+
+	for rowIndex, record := range records[1:] { // Skip header row
+		rowNum := rowIndex + 2 // +2 because we start from row 1 (skipping header) and want 1-based numbering
+
+		// Check if row has enough columns
+		if ipColumnIndex >= len(record) {
+			log.Printf("Row %d: Insufficient columns, expected at least %d", rowNum, ipColumnIndex+1)
+			invalidRows = append(invalidRows, map[string]interface{}{
+				"row":   rowNum,
+				"error": "Insufficient columns",
+				"data":  record,
+			})
+			continue
+		}
+
+		ip := strings.TrimSpace(record[ipColumnIndex])
+		if ip == "" {
+			log.Printf("Row %d: Empty IP address", rowNum)
+			invalidRows = append(invalidRows, map[string]interface{}{
+				"row":   rowNum,
+				"error": "Empty IP address",
+				"data":  record,
+			})
+			continue
+		}
+
+		log.Printf("Processing row %d: IP = %s", rowNum, ip)
+
+		// Check if this IP exists in our camera list
+		if cameraID, exists := ipToCameraMap[ip]; exists {
+			// Find the full camera object
+			for _, camera := range cameras {
+				if camera.ID == cameraID {
+					selectedCameraIDs = append(selectedCameraIDs, cameraID)
+					matchedCameras = append(matchedCameras, camera)
+					log.Printf("Row %d: Found camera %s for IP %s", rowNum, cameraID, ip)
+					break
+				}
+			}
+		} else {
+			log.Printf("Row %d: No camera found for IP %s", rowNum, ip)
+			unmatchedIPs = append(unmatchedIPs, ip)
+		}
+	}
+
+	log.Printf("Camera selection completed: %d cameras selected, %d IPs not found, %d invalid rows",
+		len(selectedCameraIDs), len(unmatchedIPs), len(invalidRows))
+
+	// Prepare response
+	response := map[string]interface{}{
+		"message":           fmt.Sprintf("Camera selection completed: %d cameras selected", len(selectedCameraIDs)),
+		"totalRows":         len(records) - 1, // Exclude header
+		"selectedCameraIds": selectedCameraIDs,
+		"selectedCameras":   matchedCameras,
+		"matchedCount":      len(selectedCameraIDs),
+		"unmatchedIPs":      unmatchedIPs,
+		"unmatchedCount":    len(unmatchedIPs),
+		"invalidRows":       invalidRows,
+		"invalidRowCount":   len(invalidRows),
+		"status":            "cameras_selected_for_config",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	// Set appropriate status code based on results
+	if len(selectedCameraIDs) == 0 {
+		w.WriteHeader(http.StatusBadRequest) // No cameras found
+	} else if len(unmatchedIPs) > 0 || len(invalidRows) > 0 {
+		w.WriteHeader(http.StatusPartialContent) // Some cameras found, some not
+	} else {
+		w.WriteHeader(http.StatusOK) // All cameras found
+	}
+
+	json.NewEncoder(w).Encode(response)
+
+	log.Printf("Camera selection response sent: %d selected cameras ready for configuration", len(selectedCameraIDs))
 }

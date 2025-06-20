@@ -68,10 +68,16 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 	var config struct {
 		Cameras []models.Camera `json:"cameras"`
 	}
-
 	// Unmarshal the JSON data
 	if err := json.Unmarshal(data, &config); err != nil {
 		return "", fmt.Errorf("failed to parse camera config: %w", err)
+	}
+
+	// Check if a camera with the same IP already exists
+	for _, cam := range config.Cameras {
+		if cam.IP == ip {
+			return "", fmt.Errorf("camera with IP address %s already exists (ID: %s)", ip, cam.ID)
+		}
 	}
 
 	// Find the highest ID
@@ -149,10 +155,8 @@ func RemoveCamera(id string) error {
 			updatedCameras = append(updatedCameras, cam)
 		} else {
 			found = true
-			// If the camera is connected, remove it from the connected cameras map
-			if _, exists := connectedCameras[id]; exists {
-				delete(connectedCameras, id)
-			}
+			// Remove the camera from the connected cameras map if it exists
+			delete(connectedCameras, id)
 		}
 	}
 

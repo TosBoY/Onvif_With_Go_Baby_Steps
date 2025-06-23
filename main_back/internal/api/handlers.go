@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"main_back/internal/camera"
-	"main_back/internal/config"
 	"main_back/internal/ffmpeg"
 	"main_back/internal/vlc"
 	"main_back/pkg/models"
@@ -34,12 +33,8 @@ func RegisterRoutes(r *mux.Router) {
 }
 
 func HandleGetCameras(w http.ResponseWriter, r *http.Request) {
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, "Failed to load camera list", http.StatusInternalServerError)
-		return
-	}
+	// Get cameras from in-memory storage instead of CSV file
+	cameras := camera.GetAllCameras()
 	json.NewEncoder(w).Encode(cameras)
 }
 
@@ -751,14 +746,8 @@ func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-
-	// Load camera information to get IP addresses
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to load camera information: %v", err), http.StatusInternalServerError)
-		return
-	}
+	// Get camera information from in-memory storage
+	cameras := camera.GetAllCameras()
 	// Process configuration errors into a map for easy lookup
 	configErrorsMap := make(map[string]string)
 	for _, errItem := range input.ConfigurationErrors {
@@ -1489,14 +1478,8 @@ func HandleImportCamerasForConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found IP column at index %d", ipColumnIndex)
-
-	// Load existing cameras to match IPs with camera IDs
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, "Failed to load camera list", http.StatusInternalServerError)
-		return
-	}
+	// Get cameras from in-memory storage to match IPs with camera IDs
+	cameras := camera.GetAllCameras()
 
 	// Create a map of IP to camera ID for quick lookup
 	ipToCameraMap := make(map[string]string)

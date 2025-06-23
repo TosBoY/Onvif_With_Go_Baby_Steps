@@ -4,7 +4,7 @@ import axios from 'axios';
 const isDevelopment = import.meta.env.DEV;
 const API_BASE_URL = isDevelopment 
   ? '/api' // Use Vite's proxy in development
-  : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8090');
+  : '/api'; // Use relative path for production (embedded mode)
 
 // Create an axios instance with default config
 const api = axios.create({

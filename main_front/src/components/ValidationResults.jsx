@@ -26,28 +26,48 @@ import ErrorIcon from '@mui/icons-material/Error';
 import DownloadIcon from '@mui/icons-material/Download';
 import { exportValidationCSV } from '../services/api';
 
-const ValidationResults = ({ validation, appliedConfig }) => {
+const ValidationResults = ({ validation, appliedConfig, configurationErrors }) => {
   const [isExporting, setIsExporting] = useState(false);
 
-  if (!validation) {
+  if (!validation && !configurationErrors) {
     return null;
-  }  // CSV Export Function
+  }// CSV Export Function
   const handleExportCSV = async () => {
     setIsExporting(true);
     try {
-      await exportValidationCSV(validation);
+      // Get camera IDs in the correct order - includes both validation results and configuration errors
+      const allCameraIds = [];
+      
+      // Add IDs from validation results
+      if (validations && validations.length > 0) {
+        validations.forEach(v => {
+          if (v.cameraId && !allCameraIds.includes(v.cameraId)) {
+            allCameraIds.push(v.cameraId);
+          }
+        });
+      }
+      
+      // Add IDs from configuration errors
+      if (configurationErrors && configurationErrors.length > 0) {
+        configurationErrors.forEach(e => {
+          if (e.cameraId && !allCameraIds.includes(e.cameraId)) {
+            allCameraIds.push(e.cameraId);
+          }
+        });
+      }
+      
+      await exportValidationCSV(validation, configurationErrors, allCameraIds);
     } catch (error) {
       console.error('Error exporting CSV:', error);
       alert('Failed to export CSV. Please try again.');
     } finally {
       setIsExporting(false);
     }
-  };
-  // Check if this is a single validation result or multiple
+  };// Check if this is a single validation result or multiple
   const isMultiple = Array.isArray(validation);
   
   // If single validation, convert to array for uniform processing
-  const validations = isMultiple ? validation : [validation];
+  const validations = validation ? (isMultiple ? validation : [validation]) : [];
   
   // Function to check if resolution matches
   const resolutionMatches = (v) => {
@@ -374,44 +394,91 @@ const ValidationResults = ({ validation, appliedConfig }) => {
         </Box>
       </ListItem>
     );
-  };
-  return (
+  };  return (
     <Box sx={{ mt: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">
-          Stream Validation Results
-        </Typography>
-        <Button
-          variant="outlined"
-          startIcon={isExporting ? <CircularProgress size={16} /> : <DownloadIcon />}
-          onClick={handleExportCSV}
-          disabled={isExporting}
-          size="small"
-          sx={{ minWidth: '120px' }}
-        >
-          {isExporting ? 'Exporting...' : 'Export CSV'}
-        </Button>
-      </Box>{/* Show summary if multiple validations */}
-      {isMultiple && (
-        <Alert 
-          severity={resolutionFailures.length > 0 ? 'error' : (warningValidations.length > 0 ? 'warning' : 'success')} 
-          sx={{ mb: 2 }}
-        >
-          <Typography variant="body1">
-            {resolutionFailures.length === 0 && warningValidations.length === 0 && 
-             `${successfulValidations.length} camera(s) configured successfully with exact settings.`}
-            {resolutionFailures.length > 0 && 
-             `${resolutionFailures.length} camera(s) failed due to resolution incompatibility.`}
-            {warningValidations.length > 0 && 
-             ` ${warningValidations.length} camera(s) configured with adjusted FPS/bitrate settings.`}
-            {successfulValidations.length > 0 && (resolutionFailures.length > 0 || warningValidations.length > 0) && 
-             ` ${successfulValidations.length} camera(s) configured perfectly.`}
+          {validation && validation.length > 0 ? 'Stream Validation Results' : 'Configuration Results'}
+        </Typography>        {((validation && validation.length > 0) || (configurationErrors && configurationErrors.length > 0)) && (
+          <Button
+            variant="outlined"
+            startIcon={isExporting ? <CircularProgress size={16} /> : <DownloadIcon />}
+            onClick={handleExportCSV}
+            disabled={isExporting}
+            size="small"
+            sx={{ minWidth: '120px' }}
+          >
+            {isExporting ? 'Exporting...' : 'Export CSV'}
+          </Button>
+        )}
+      </Box>      {/* Configuration Errors Section */}
+      {configurationErrors && configurationErrors.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', color: 'error.main' }}>
+            <ErrorIcon sx={{ mr: 1 }} />
+            Configuration Errors ({configurationErrors.length} camera{configurationErrors.length > 1 ? 's' : ''})
           </Typography>
-        </Alert>
+          <Alert severity="error" sx={{ mb: 2 }}>
+            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
+              The following cameras failed during configuration and could not proceed to validation:
+            </Typography>
+          </Alert>
+          <Paper variant="outlined">
+            <List disablePadding>
+              {configurationErrors.map((errorItem, index) => (
+                <ListItem 
+                  key={index}
+                  sx={{ 
+                    px: 2, 
+                    py: 1.5,
+                    borderBottom: index < configurationErrors.length - 1 ? '1px solid' : 'none',
+                    borderColor: 'divider'
+                  }}
+                >
+                  <Box sx={{ width: '100%' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                      <ErrorIcon color="error" sx={{ mr: 1, fontSize: 20 }} />
+                      <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
+                        Camera ID: {errorItem.cameraId}
+                      </Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ ml: 3 }}>
+                      <strong>Error:</strong> {errorItem.error}
+                    </Typography>
+                  </Box>
+                </ListItem>
+              ))}
+            </List>
+          </Paper>
+        </Box>
       )}
 
-      {/* If single validation, render it directly */}
-      {!isMultiple && renderSingleValidation(validation)}
+      {/* Show validation results only if there are validations */}
+      {validation && validations.length > 0 && (
+        <>
+          {/* Show summary if multiple validations */}
+          {isMultiple && (
+            <Alert 
+              severity={resolutionFailures.length > 0 ? 'error' : (warningValidations.length > 0 ? 'warning' : 'success')} 
+              sx={{ mb: 2 }}
+            >
+              <Typography variant="body1">
+                {resolutionFailures.length === 0 && warningValidations.length === 0 && 
+                 `${successfulValidations.length} camera(s) configured successfully with exact settings.`}
+                {resolutionFailures.length > 0 && 
+                 `${resolutionFailures.length} camera(s) failed due to resolution incompatibility.`}
+                {warningValidations.length > 0 && 
+                 ` ${warningValidations.length} camera(s) configured with adjusted FPS/bitrate settings.`}
+                {successfulValidations.length > 0 && (resolutionFailures.length > 0 || warningValidations.length > 0) && 
+                 ` ${successfulValidations.length} camera(s) configured perfectly.`}
+              </Typography>
+            </Alert>
+          )}
+
+          {/* If single validation, render it directly */}
+          {!isMultiple && renderSingleValidation(validation)}
+        </>
+      )}
 
       {/* If multiple validations, show in separate sections */}
       {isMultiple && (
@@ -468,8 +535,7 @@ const ValidationResults = ({ validation, appliedConfig }) => {
                 </List>
               </Paper>
             </Grid>
-          )}
-        </Grid>
+          )}        </Grid>
       )}
 
       {appliedConfig && (

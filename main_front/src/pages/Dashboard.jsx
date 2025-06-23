@@ -42,10 +42,10 @@ const Dashboard = () => {
   const [error, setError] = useState(null);
   const [showError, setShowError] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null);
-  const [selectedCameras, setSelectedCameras] = useState([]);
-    // Add validation state
+  const [selectedCameras, setSelectedCameras] = useState([]);    // Add validation state
   const [validationResults, setValidationResults] = useState(null);
   const [appliedConfig, setAppliedConfig] = useState(null);
+  const [configurationErrors, setConfigurationErrors] = useState(null);
   const [configSuccess, setConfigSuccess] = useState('');
   
   // Add camera dialog state
@@ -181,6 +181,7 @@ const Dashboard = () => {
     // Handle both single result and array of results
     setValidationResults(result.validation);
     setAppliedConfig(result.appliedConfig);
+    setConfigurationErrors(result.configurationErrors);
     
     // Count successful validations
     const successCount = Array.isArray(result.validation) 
@@ -197,6 +198,7 @@ const Dashboard = () => {
   const handleClearValidation = () => {
     setValidationResults(null);
     setAppliedConfig(null);
+    setConfigurationErrors(null);
     setConfigSuccess('');  };
   
   // Add camera dialog functions
@@ -607,10 +609,8 @@ const Dashboard = () => {
               )}
             </Paper>
           </Box>
-        </Box>
-
-        {/* Validation Results Panel - Full Width Below */}
-        {validationResults && (
+        </Box>        {/* Validation Results Panel - Full Width Below */}
+        {(validationResults || configurationErrors) && (
           <Box sx={{ 
             width: '100%',
             maxWidth: '1400px',
@@ -621,6 +621,7 @@ const Dashboard = () => {
               <ValidationResults 
                 validation={validationResults} 
                 appliedConfig={appliedConfig}
+                configurationErrors={configurationErrors}
                 onClear={handleClearValidation}
               />
             </Paper>

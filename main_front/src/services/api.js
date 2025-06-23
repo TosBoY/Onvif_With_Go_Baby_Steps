@@ -120,9 +120,13 @@ export const deleteCamera = async (cameraId) => {
 };
 
 // Export validation results as CSV
-export const exportValidationCSV = async (validation) => {
+export const exportValidationCSV = async (validation, configurationErrors = [], cameraOrder = []) => {
   try {
-    const response = await api.post('/export-validation-csv', { validation }, {
+    const response = await api.post('/export-validation-csv', { 
+      validation,
+      configurationErrors,
+      cameraOrder
+    }, {
       responseType: 'blob',
     });
     

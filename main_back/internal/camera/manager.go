@@ -1,8 +1,9 @@
 package camera
 
 import (
-	"encoding/json"
+	"encoding/csv"
 	"fmt"
+	"main_back/internal/config"
 	"main_back/pkg/models"
 	"os"
 	"path/filepath"
@@ -47,34 +48,26 @@ func GetCameraClient(id string) (*CameraClient, error) {
 	return client, nil
 }
 
-// AddNewCamera adds a new camera to the cameras.json file and assigns it an ID
+// AddNewCamera adds a new camera to the cameras.csv file and assigns it an ID
 // that is one greater than the largest existing ID.
 // Returns the new camera ID and any error encountered.
 func AddNewCamera(ip string, port int, url string, username string, password string, isFake bool) (string, error) {
-	// Get the path to cameras.json
+	// Get the path to cameras.csv
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	configPath := filepath.Join(workingDir, "..", "..", "config", "cameras.json")
+	configPath := filepath.Join(workingDir, "..", "..", "config", "cameras.csv")
 
-	// Read the existing cameras
-	data, err := os.ReadFile(configPath)
+	// Load the existing cameras using the config package
+	cameras, err := config.LoadCameraList()
 	if err != nil {
-		return "", fmt.Errorf("failed to read camera config file %s: %w", configPath, err)
-	}
-
-	var config struct {
-		Cameras []models.Camera `json:"cameras"`
-	}
-	// Unmarshal the JSON data
-	if err := json.Unmarshal(data, &config); err != nil {
-		return "", fmt.Errorf("failed to parse camera config: %w", err)
+		return "", fmt.Errorf("failed to load existing cameras: %w", err)
 	}
 
 	// Check if a camera with the same IP already exists
-	for _, cam := range config.Cameras {
+	for _, cam := range cameras {
 		if cam.IP == ip {
 			return "", fmt.Errorf("camera with IP address %s already exists (ID: %s)", ip, cam.ID)
 		}
@@ -82,7 +75,7 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 
 	// Find the highest ID
 	highestID := 0
-	for _, cam := range config.Cameras {
+	for _, cam := range cameras {
 		// Try to convert the ID to an integer
 		if camID, err := strconv.Atoi(cam.ID); err == nil {
 			if camID > highestID {
@@ -92,7 +85,9 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 	}
 
 	// Create a new ID by incrementing the highest ID
-	newID := strconv.Itoa(highestID + 1) // Create a new camera
+	newID := strconv.Itoa(highestID + 1)
+
+	// Create a new camera
 	newCamera := models.Camera{
 		ID:       newID,
 		IP:       ip,
@@ -104,53 +99,79 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 	}
 
 	// Add the new camera to the list
-	config.Cameras = append(config.Cameras, newCamera)
+	cameras = append(cameras, newCamera)
 
-	// Marshal the updated config with indentation for better readability
-	updatedData, err := json.MarshalIndent(config, "", "  ")
+	// Save the updated list
+	err = saveCameraListToCSV(cameras, configPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal updated camera config: %w", err)
+		return "", fmt.Errorf("failed to save updated camera list: %w", err)
 	}
 
-	// Write the updated config back to the file
-	if err := os.WriteFile(configPath, updatedData, 0644); err != nil {
-		return "", fmt.Errorf("failed to write updated camera config: %w", err)
-	}
 	// Return the new camera ID
 	return newID, nil
 }
 
-// RemoveCamera removes a camera from the cameras.json file by its ID.
+// saveCameraListToCSV saves the list of cameras to a CSV file
+func saveCameraListToCSV(cameras []models.Camera, filePath string) error {
+	// Create or open the file
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create or open camera CSV file: %w", err)
+	}
+	defer file.Close()
+
+	// Create a CSV writer
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write the header row
+	header := []string{"id", "ip", "port", "url", "username", "password", "isFake"}
+	if err := writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// Write each camera record
+	for _, cam := range cameras {
+		record := []string{
+			cam.ID,
+			cam.IP,
+			strconv.Itoa(cam.Port),
+			cam.URL,
+			cam.Username,
+			cam.Password,
+			strconv.FormatBool(cam.IsFake),
+		}
+
+		if err := writer.Write(record); err != nil {
+			return fmt.Errorf("failed to write camera record: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// RemoveCamera removes a camera from the cameras.csv file by its ID.
 // It also removes the camera client from the connected cameras map if it exists.
 // Returns any error encountered.
 func RemoveCamera(id string) error {
-	// Get the path to cameras.json
+	// Get the path to cameras.csv
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
 	}
 
-	configPath := filepath.Join(workingDir, "..", "..", "config", "cameras.json")
+	configPath := filepath.Join(workingDir, "..", "..", "config", "cameras.csv")
 
-	// Read the existing cameras
-	data, err := os.ReadFile(configPath)
+	// Load the existing cameras using the config package
+	cameras, err := config.LoadCameraList()
 	if err != nil {
-		return fmt.Errorf("failed to read camera config file %s: %w", configPath, err)
-	}
-
-	var config struct {
-		Cameras []models.Camera `json:"cameras"`
-	}
-
-	// Unmarshal the JSON data
-	if err := json.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("failed to parse camera config: %w", err)
+		return fmt.Errorf("failed to load existing cameras: %w", err)
 	}
 
 	// Find the camera and remove it
 	found := false
-	updatedCameras := make([]models.Camera, 0, len(config.Cameras))
-	for _, cam := range config.Cameras {
+	updatedCameras := make([]models.Camera, 0, len(cameras))
+	for _, cam := range cameras {
 		if cam.ID != id {
 			updatedCameras = append(updatedCameras, cam)
 		} else {
@@ -164,18 +185,10 @@ func RemoveCamera(id string) error {
 		return fmt.Errorf("camera with ID %s not found", id)
 	}
 
-	// Update the cameras list
-	config.Cameras = updatedCameras
-
-	// Marshal the updated config with indentation for better readability
-	updatedData, err := json.MarshalIndent(config, "", "  ")
+	// Save the updated list
+	err = saveCameraListToCSV(updatedCameras, configPath)
 	if err != nil {
-		return fmt.Errorf("failed to marshal updated camera config: %w", err)
-	}
-
-	// Write the updated config back to the file
-	if err := os.WriteFile(configPath, updatedData, 0644); err != nil {
-		return fmt.Errorf("failed to write updated camera config: %w", err)
+		return fmt.Errorf("failed to save updated camera list: %w", err)
 	}
 
 	return nil

@@ -204,17 +204,16 @@ const CameraConfigPanel = ({
                 });
               }
             });
-          }
-          
-          // Pass validation results back to Dashboard
-          if (onConfigurationApplied && validations.length > 0) {
+          }          // Pass validation results back to Dashboard
+          if (onConfigurationApplied && (validations.length > 0 || (batchResult.configurationErrors && batchResult.configurationErrors.length > 0))) {
             const compositeResult = {
               validation: validations,
               appliedConfig: {
                 resolution: { width: config.width, height: config.height },
                 fps: config.fps,
                 bitrate: config.bitrate || 0
-              }
+              },
+              configurationErrors: batchResult.configurationErrors || []
             };
             onConfigurationApplied(compositeResult);
           }
@@ -343,16 +342,15 @@ const CameraConfigPanel = ({
             });
           }
         });
-      }
-      
-      // Pass all validation results back to Dashboard
-      if (onConfigurationApplied && validations.length > 0) {        const compositeResult = {
+      }      // Pass all validation results back to Dashboard
+      if (onConfigurationApplied && (validations.length > 0 || (batchResult.configurationErrors && batchResult.configurationErrors.length > 0))) {        const compositeResult = {
           validation: validations,
           appliedConfig: {
             resolution: { width, height },
             fps,
             bitrate: bitrateValue
-          }
+          },
+          configurationErrors: batchResult.configurationErrors || []
         };
         onConfigurationApplied(compositeResult);
       }

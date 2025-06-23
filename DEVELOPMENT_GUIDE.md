@@ -63,7 +63,7 @@ The backend is built with Go and handles ONVIF camera communication and configur
 - `internal/camera/`: Camera management logic
 - `internal/ffprobe/`: Stream validation
 - `pkg/models/`: Data models
-- `config/cameras.json`: Camera configuration storage
+- `config/cameras.csv`: Camera configuration storage
 
 ## Testing
 
@@ -102,7 +102,7 @@ This batch processing approach ensures efficient configuration of multiple camer
 
 ## Maintenance
 
-- The camera configuration is stored in `main_back/config/cameras.json`
+- The camera configuration is stored in `main_back/config/cameras.csv`
 - Backup this file regularly to preserve camera settings
 - Update the frontend and backend dependencies periodically
 - Check for ONVIF library updates for new camera compatibility

@@ -54,7 +54,7 @@ main_back/
   internal/api/handlers.go   # API endpoint handlers
   internal/camera/manager.go # Camera management logic
   internal/ffprobe/          # Stream validation tool
-  config/cameras.json        # Camera configuration storage
+  config/cameras.csv         # Camera configuration storage
 
 main_front/
   src/

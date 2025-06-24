@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"onvif_manager/internal/backend/camera"
-	"onvif_manager/internal/backend/config"
 	"onvif_manager/internal/backend/ffmpeg"
 	"onvif_manager/pkg/models"
 )
@@ -26,24 +25,17 @@ func NewCameraService() *CameraService {
 
 // EnsureCamerasInitialized ensures that all cameras are initialized and connected
 func (cs *CameraService) EnsureCamerasInitialized() error {
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		return fmt.Errorf("failed to load camera list: %w", err)
-	}
+	// With in-memory camera storage, we don't need to load from files
+	// Camera initialization happens when cameras are added
 
-	// Initialize all cameras (this will populate the connectedCameras map)
-	if err := camera.InitializeAllCameras(cameras); err != nil {
-		// Don't fail completely if some cameras can't be initialized
-		// The individual operations will handle missing cameras gracefully
-		log.Printf("Warning: Some cameras failed to initialize: %v", err)
-	}
-
+	// We'll keep this method for API compatibility, but it's now a no-op
 	return nil
 }
 
 // GetCameraList returns all cameras in the system
 func (cs *CameraService) GetCameraList() ([]models.Camera, error) {
-	return config.LoadCameraList()
+	// Use in-memory camera list instead of loading from file
+	return camera.GetAllCameras(), nil
 }
 
 // ImportCamerasFromCSV imports cameras from a CSV file
@@ -210,10 +202,37 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 	writer := csv.NewWriter(file)
 	defer writer.Flush()
 
-	// Write header
-	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual"}
+	// Write header with notes column
+	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "notes"}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// First, export cameras with configuration errors (ones that didn't get to validation)
+	for cameraID, configResult := range validation.CameraResults {
+		// Skip successful configurations as they will be included in validation results
+		if configResult.Success {
+			continue
+		}
+
+		cameraIP := "Unknown"
+		if camera, exists := cameraMap[cameraID]; exists {
+			cameraIP = camera.IP
+		}
+
+		// Error message from configuration stage
+		errorMsg := ""
+		if configResult.Error != nil {
+			errorMsg = configResult.Error.Error()
+		} else {
+			errorMsg = "Configuration failed"
+		}
+
+		// Write row for configuration error
+		row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
+		if err := writer.Write(row); err != nil {
+			return fmt.Errorf("failed to write CSV row: %w", err)
+		}
 	}
 
 	// Write validation results
@@ -222,10 +241,16 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 		if camera, exists := cameraMap[cameraID]; exists {
 			cameraIP = camera.IP
 		}
-
 		result := "FAIL"
+		notes := ""
+
 		if validationResult.IsValid {
 			result = "PASS"
+			notes = "All parameters match expected values"
+		} else if validationResult.Error != "" {
+			notes = validationResult.Error
+		} else {
+			notes = "Validation failed without detailed error"
 		}
 
 		resoExpected := fmt.Sprintf("%dx%d", validationResult.ExpectedWidth, validationResult.ExpectedHeight)
@@ -240,7 +265,7 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 			fpsActual = fmt.Sprintf("%.2f", validationResult.ActualFPS)
 		}
 
-		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual}
+		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, notes}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
@@ -397,12 +422,8 @@ func (cs *CameraService) processCameraSelection(records [][]string) (*SelectionR
 	if ipColumnIndex == -1 {
 		return nil, fmt.Errorf("required column 'ip' not found in CSV header")
 	}
-
-	// Load existing cameras to match IPs with camera IDs
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load camera list: %w", err)
-	}
+	// Get existing cameras from in-memory storage to match IPs with camera IDs
+	cameras := camera.GetAllCameras()
 
 	// Create a map of IP to camera ID for quick lookup
 	ipToCameraMap := make(map[string]string)

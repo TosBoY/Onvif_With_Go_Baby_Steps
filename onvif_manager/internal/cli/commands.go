@@ -18,6 +18,41 @@ var RootCmd = &cobra.Command{
 	Long:  `A command line interface for managing ONVIF cameras, applying configurations, and validating streams.`,
 }
 
+// webCmd represents the web server command
+var webCmd = &cobra.Command{
+	Use:   "web",
+	Short: "Start combined web application (frontend + API) on port 8090",
+	Long:  `Start combined web application with both frontend and API endpoints on port 8090.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Print information about the web application
+		fmt.Println("🌐 Starting ONVIF Manager Web Application")
+		fmt.Println("📱 Frontend will be available at http://localhost:8090")
+		fmt.Println("🔌 API endpoints will be available at http://localhost:8090/api")
+		fmt.Println("")
+
+		// Since we can't directly call webserver.StartWebServer due to import cycle,
+		// we'll just exit here. The actual handling is done in webserver.StartApp
+		os.Exit(0)
+	},
+}
+
+// serverCmd represents the API server command
+var serverCmd = &cobra.Command{
+	Use:   "server",
+	Short: "Start API server only on port 8090",
+	Long:  `Start API server only without the web interface on port 8090.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		// Print information about the API server
+		fmt.Println("🚀 Starting ONVIF Manager API Server")
+		fmt.Println("📊 API endpoints will be available at http://localhost:8090")
+		fmt.Println("")
+
+		// Since we can't directly call webserver.StartAPIServer due to import cycle,
+		// we'll just exit here. The actual handling is done in webserver.StartApp
+		os.Exit(0)
+	},
+}
+
 var cameraService *CameraService
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -25,14 +60,29 @@ func Execute() error {
 	return RootCmd.Execute()
 }
 
+// importCmd represents the import command
+var importCmd = &cobra.Command{
+	Use:   "import [csv-file]",
+	Short: "Import cameras from CSV file",
+	Long:  `Import cameras into the system from a CSV file containing camera details.`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runImportCameras(args[0])
+	},
+}
+
 func init() {
 	cameraService = NewCameraService()
+	// Register only the simplified workflow commands
+	RootCmd.AddCommand(webCmd)    // Add web command
+	RootCmd.AddCommand(serverCmd) // Add server command
+	RootCmd.AddCommand(configCmd) // Keep config command
 
-	// Add commands
-	RootCmd.AddCommand(listCmd)
-	RootCmd.AddCommand(selectCmd)
-	RootCmd.AddCommand(configCmd)
-	RootCmd.AddCommand(exportCmd)
+	// These commands are no longer exposed in the simplified workflow
+	// RootCmd.AddCommand(listCmd)
+	// RootCmd.AddCommand(selectCmd)
+	// RootCmd.AddCommand(exportCmd)
+	// RootCmd.AddCommand(importCmd)
 }
 
 // listCmd represents the list command
@@ -65,8 +115,8 @@ var configCmd = &cobra.Command{
 
 var applyConfigCmd = &cobra.Command{
 	Use:   "apply [camera-csv] [config-csv]",
-	Short: "Apply configuration from CSV files",
-	Long:  `Apply configuration to cameras selected from camera CSV file using settings from config CSV file.`,
+	Short: "Import cameras and apply configuration",
+	Long:  `Import cameras from first CSV file and apply configuration from second CSV file in a single operation.`,
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return runApplyConfig(args[0], args[1])
@@ -128,11 +178,15 @@ var applyToSelectedCmd = &cobra.Command{
 }
 
 func init() {
+	// Only add the apply command for the simplified workflow
 	configCmd.AddCommand(applyConfigCmd)
-	configCmd.AddCommand(configShowCmd)
-	configCmd.AddCommand(configSetCmd)
-	configCmd.AddCommand(configImportCmd)
-	configCmd.AddCommand(applyToSelectedCmd)
+
+	// These commands are no longer exposed in the simplified workflow
+	// but kept in the code for compatibility with existing scripts
+	// configCmd.AddCommand(configShowCmd)
+	// configCmd.AddCommand(configSetCmd)
+	// configCmd.AddCommand(configImportCmd)
+	// configCmd.AddCommand(applyToSelectedCmd)
 }
 
 // Global variable to store last validation results
@@ -213,20 +267,28 @@ func runSelectCameras(csvFile string) error {
 	return nil
 }
 
-// runApplyConfig applies configuration to cameras
+// runApplyConfig imports cameras and applies configuration in one workflow
 func runApplyConfig(cameraCSV, configCSV string) error {
-	// Step 1: Select cameras
-	fmt.Printf("📂 Loading camera selection from: %s\n", cameraCSV)
-	selection, err := cameraService.SelectCamerasFromCSV(cameraCSV)
+	// Step 1: Import cameras from the first CSV file
+	fmt.Printf("📂 Importing cameras from: %s\n", cameraCSV)
+	importResult, err := cameraService.ImportCamerasFromCSV(cameraCSV)
 	if err != nil {
-		return fmt.Errorf("failed to select cameras: %w", err)
+		return fmt.Errorf("failed to import cameras: %w", err)
 	}
 
-	if len(selection.SelectedCameraIDs) == 0 {
-		return fmt.Errorf("no cameras selected from CSV file")
+	if importResult.SuccessCount == 0 {
+		return fmt.Errorf("no cameras were successfully imported from CSV file")
 	}
 
-	fmt.Printf("✅ Selected %d cameras\n", len(selection.SelectedCameraIDs))
+	fmt.Printf("✅ Imported %d cameras\n", importResult.SuccessCount)
+
+	// Extract camera IDs from import result
+	var cameraIDs []string
+	for _, result := range importResult.Results {
+		if result.Success {
+			cameraIDs = append(cameraIDs, result.CameraID)
+		}
+	}
 
 	// Step 2: Load configuration
 	fmt.Printf("📂 Loading configuration from: %s\n", configCSV)
@@ -237,9 +299,8 @@ func runApplyConfig(cameraCSV, configCSV string) error {
 
 	fmt.Printf("⚙️  Configuration loaded: %dx%d, %d FPS, %d kbps\n",
 		config.Width, config.Height, config.FPS, config.Bitrate)
-
 	// Step 3: Confirm with user
-	fmt.Printf("\n🤔 Do you want to apply this configuration to %d cameras? (y/N): ", len(selection.SelectedCameraIDs))
+	fmt.Printf("\n🤔 Do you want to apply this configuration to %d cameras? (y/N): ", len(cameraIDs))
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Scan()
 	response := strings.ToLower(strings.TrimSpace(scanner.Text()))
@@ -251,12 +312,9 @@ func runApplyConfig(cameraCSV, configCSV string) error {
 	// Step 4: Apply configuration
 	fmt.Printf("\n🔧 Applying configuration to cameras...\n")
 
-	// Ensure cameras are initialized
-	if err := cameraService.EnsureCamerasInitialized(); err != nil {
-		return fmt.Errorf("failed to initialize cameras: %w", err)
-	}
+	// Note: No need to call EnsureCamerasInitialized as cameras are already initialized during import
 
-	validation, err := cameraService.ApplyConfigToCameras(selection.SelectedCameraIDs, config)
+	validation, err := cameraService.ApplyConfigToCameras(cameraIDs, config)
 	if err != nil {
 		return fmt.Errorf("failed to apply configuration: %w", err)
 	}
@@ -553,4 +611,44 @@ func askForConfirmation(message string) bool {
 	scanner.Scan()
 	response := strings.ToLower(strings.TrimSpace(scanner.Text()))
 	return response == "y" || response == "yes"
+}
+
+// runImportCameras imports cameras from a CSV file
+func runImportCameras(csvFile string) error {
+	fmt.Printf("📂 Importing cameras from: %s\n", csvFile)
+
+	result, err := cameraService.ImportCamerasFromCSV(csvFile)
+	if err != nil {
+		return fmt.Errorf("failed to import cameras: %w", err)
+	}
+
+	fmt.Printf("\n✅ %s\n", result.Message)
+	fmt.Printf("📊 Import Summary:\n")
+	fmt.Printf("   • Total rows processed: %d\n", result.TotalRows)
+	fmt.Printf("   • Cameras added successfully: %d\n", result.SuccessCount)
+	fmt.Printf("   • Errors: %d\n", result.ErrorCount)
+
+	if result.SuccessCount > 0 {
+		fmt.Printf("\n✨ Successfully added cameras:\n")
+		for _, rowResult := range result.Results {
+			if rowResult.Success {
+				fakeStatus := ""
+				if rowResult.Camera.IsFake {
+					fakeStatus = " (Simulated)"
+				}
+				fmt.Printf("   • Camera ID: %s - %s%s\n", rowResult.CameraID, rowResult.Camera.IP, fakeStatus)
+			}
+		}
+	}
+
+	if result.ErrorCount > 0 {
+		fmt.Printf("\n⚠️ Import errors:\n")
+		for _, rowResult := range result.Results {
+			if !rowResult.Success {
+				fmt.Printf("   • Row %d: %s\n", rowResult.Row, rowResult.Error)
+			}
+		}
+	}
+
+	return nil
 }

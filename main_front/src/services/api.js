@@ -135,11 +135,21 @@ export const exportValidationCSV = async (validation, configurationErrors = [], 
     
     // Create a temporary URL for the blob
     const url = window.URL.createObjectURL(blob);
-    
-    // Create a temporary anchor element and trigger download
+      // Create a temporary anchor element and trigger download
     const a = document.createElement('a');
     a.href = url;
-    a.download = `validation_results_${new Date().toISOString().slice(0, 19).replace(/[:.]/g, '-')}.csv`;
+    
+    // Generate local timestamp in format YYYY-MM-DDTHH-mm-ss
+    const now = new Date();
+    const localTimestamp = 
+      `${now.getFullYear()}-` + 
+      `${String(now.getMonth() + 1).padStart(2, '0')}-` +
+      `${String(now.getDate()).padStart(2, '0')}T` +
+      `${String(now.getHours()).padStart(2, '0')}-` +
+      `${String(now.getMinutes()).padStart(2, '0')}-` +
+      `${String(now.getSeconds()).padStart(2, '0')}`;
+    
+    a.download = `validation_results_${localTimestamp}.csv`;
     document.body.appendChild(a);
     a.click();
     

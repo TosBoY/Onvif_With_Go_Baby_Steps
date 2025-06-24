@@ -71,6 +71,10 @@ onvif_front/yarn-error.log*
 info/backup/
 tests/
 
+# === CSV Result Files ===
+validation_results_*.csv
+**/validation_results_*.csv
+
 # === FFMPEG Build ===
 /ffmpeg/
 /ffmpeg/**

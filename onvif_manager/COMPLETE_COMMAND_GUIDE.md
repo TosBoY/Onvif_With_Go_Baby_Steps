@@ -1,8 +1,18 @@
 # ONVIF Manager - Complete Command Guide
 
-A comprehensive tool for managing ONVIF cameras with CLI interface, API server, and web application capabilities.
+A comprehensive tool for managing ONVIF cameras with an ultra-simplified CLI workflow, API server, and web application capabilities. This version uses in-memory camera management without requiring persistent configuration files and features a single-command approach to import cameras and apply configuration.
 
-## 🚀 Quick Start
+## 🚀 Quick Start - Ultra Simplified CLI Workflow
+
+```bash
+# The only CLI command you need
+./onvif-manager.exe config apply examples/cameras.csv examples/config_1080p.csv
+```
+
+This single command:
+1. Imports all cameras from cameras.csv (with details like IP, username, password)
+2. Applies configuration settings from config_1080p.csv
+3. Prompts to export validation results to CSV file
 
 ### Build Options
 
@@ -20,8 +30,8 @@ build-embedded.bat
 
 # Or manual build:
 # 1. Build frontend: cd ../main_front && npm run build
-# 2. Copy files: xcopy "..\main_front\dist" "cmd\app\web" /E /I /Y
-# 3. Build binary: go build -o onvif-manager-embedded.exe cmd/app/main.go cmd/app/webserver.go
+# 2. Copy files: xcopy "..\main_front\dist" "internal\webserver\web" /E /I /Y
+# 3. Build binary: go build -o onvif-manager-embedded.exe cmd/app/main.go
 ```
 
 ## 🌐 Server Modes
@@ -29,7 +39,7 @@ build-embedded.bat
 ### Web Application Mode (Recommended)
 Starts combined frontend and API server on port 8090:
 ```bash
-./onvif-manager-embedded.exe web
+./onvif-manager.exe web
 ```
 - **Frontend**: http://localhost:8090
 - **API**: http://localhost:8090/api/*
@@ -43,96 +53,76 @@ Starts API server only on port 8090:
 - **API**: http://localhost:8090/*
 - For programmatic access or custom frontends
 
-## 📋 CLI Commands
+## 📋 CLI Command
 
-### Camera Management
+### The Only Command You Need
 
-#### 1. List All Cameras
-Display all cameras currently configured in the system:
 ```bash
-./onvif-manager.exe list
-```
-**Output:**
-- Camera ID, IP, Port, Username, URL, IsFake status
-- Total count of cameras
-
-#### 2. Select Cameras from CSV
-Select specific cameras using a CSV file containing IP addresses:
-```bash
-./onvif-manager.exe select cameras_to_select.csv
+./onvif-manager.exe config apply cameras.csv config_1080p.csv
 ```
 
-**CSV Format:**
+**Process:**
+1. Imports cameras from first CSV file
+2. Loads configuration from second CSV file
+3. Applies configuration to all imported cameras
+4. Validates results
+5. Prompts to export results to CSV
+
+**First CSV (cameras.csv) Format:**
 ```csv
-ip
-192.168.1.12
-192.168.1.30
-192.168.1.31
+ip,username,password,port,url,isfake
+192.168.1.12,admin,admin123,80,,false
+192.168.1.30,admin,admin123,80,,false
+192.168.1.31,admin,admin123,80,,true
 ```
 
-**Output:**
-- Shows matched cameras and unmatched IPs
-- Reports invalid rows and statistics
-
-### Configuration Management
-
-#### 3. Apply Configuration (Two CSV Files)
-Apply configuration using separate camera selection and config files:
-```bash
-./onvif-manager.exe config apply cameras_to_configure.csv config_settings.csv
-```
-
-**Camera Selection CSV (`cameras_to_configure.csv`):**
-```csv
-ip
-192.168.1.12
-192.168.1.30
-192.168.1.31
-```
-
-**Configuration CSV (`config_settings.csv`):**
+**Second CSV (config_1080p.csv) Format:**
 ```csv
 width,height,fps,bitrate
 1920,1080,30,4096
 ```
 
-#### 4. Show Current Saved Configuration
-Display the currently saved configuration:
-```bash
-./onvif-manager.exe config show
-```
+### Server Commands
 
-#### 5. Set Configuration Manually
-Set configuration values manually:
+#### 3. Start Web Server
+Start the combined web interface and API server:
 ```bash
-./onvif-manager.exe config set 1920 1080 30 4096
+./onvif-manager.exe web
 ```
-**Parameters:** width height fps bitrate
+**Features:**
+- Web interface available at http://localhost:8090
+- API endpoints at http://localhost:8090/api/*
+- Interactive camera management and configuration
 
-#### 6. Import Configuration from CSV
-Import and save configuration from a CSV file:
+#### 4. Start API Server Only
+Start just the API server without the web interface:
 ```bash
-./onvif-manager.exe config import config_1080p.csv
+./onvif-manager.exe server
 ```
+**Features:**
+- API endpoints available at http://localhost:8090/*
+- Programmatic access for custom clients
 
-**Config CSV Format:**
+### Results Format
+
+When the command completes and you choose to export validation results, the CSV will have this format:
+
+**Config CSV Format (Second Parameter):**
 ```csv
 width,height,fps,bitrate
 1920,1080,30,4096
-```
-
-#### 7. Apply Saved Configuration to Selected Cameras
-Apply the current saved configuration to cameras from CSV:
-```bash
-./onvif-manager.exe config apply-to cameras_to_configure.csv
 ```
 
 ### Results Management
 
-#### 8. Export Validation Results
-Export the last validation results to CSV:
-```bash
-./onvif-manager.exe export validation_results.csv
+After running the command, you'll be prompted to export validation results:
+```
+💾 Do you want to export validation results to CSV? (y/N):
+```
+
+If you select 'y', you'll be prompted to enter a filename:
+```
+📄 Enter output filename (default: validation_results_20250624_153000.csv):
 ```
 
 **Output CSV Format:**
@@ -144,7 +134,56 @@ cam_id,cam_ip,result,reso_expected,reso_actual,fps_expected,fps_actual
 
 ## 📁 CSV File Examples
 
-### Camera Selection Files
+### Adding Cameras to the System
+
+Cameras can be added to the system in multiple ways:
+
+**Option 1: Using the CLI Command**
+```bash
+./onvif-manager.exe config apply cameras.csv config_1080p.csv
+```
+This will import cameras and immediately apply configuration in one step.
+
+**Option 2: Using the Web Interface**
+1. Navigate to http://localhost:8090 after starting with `./onvif-manager.exe web`
+2. Use the "Add Camera" function to add cameras individually
+3. Or use the "Import CSV" function with a CSV file
+
+**CSV Format for Camera Import:**
+```csv
+ip,username,password,port,url,isfake
+192.168.1.12,admin,admin123,80,,false
+192.168.1.30,admin,admin123,80,,false
+192.168.1.31,admin,admin123,80,,true
+```
+
+Required columns:
+- `ip`: Camera IP address
+- `username`: Camera login username
+
+Optional columns:
+- `port`: ONVIF port (default: 80)
+- `url`: Custom stream URL (leave empty for auto-detection)
+- `password`: Camera login password
+- `isfake`: Set to `true` for simulated cameras (default: false)
+
+### CSV File Types
+
+#### Camera CSV File (First Parameter)
+
+Used as the first parameter to `config apply` command.
+
+**Example: `cameras.csv`**
+```csv
+ip,username,password,port,url,isfake
+192.168.1.12,admin,admin123,80,,false
+192.168.1.30,admin,admin123,80,,false
+192.168.1.31,admin,admin123,80,,true
+```
+
+#### Camera Selection Files
+
+Used to select cameras that are already in the system for operations like configuration application.
 
 **Example: `cameras_to_configure.csv`**
 ```csv
@@ -154,6 +193,8 @@ ip
 192.168.1.31
 192.168.1.45
 ```
+
+Note: Selection files don't add cameras to the system; they only specify which existing cameras to operate on.
 
 ### Configuration Files
 
@@ -177,53 +218,42 @@ width,height,fps,bitrate
 
 ## 🔄 Complete Workflow Examples
 
-### Workflow 1: Direct Configuration Application
+### Workflow 1: Simple One-Command Operation
+
 ```bash
-# 1. List available cameras
-./onvif-manager.exe list
-
-# 2. Apply configuration directly
-./onvif-manager.exe config apply cameras_to_configure.csv config_1080p.csv
-
-# 3. Export results (optional)
-./onvif-manager.exe export results_20240623.csv
+# Single command to import cameras and apply configuration
+./onvif-manager.exe config apply examples/cameras.csv examples/config_1080p.csv
 ```
 
-### Workflow 2: Using Saved Configuration
+This command will:
+- Import all cameras from cameras.csv
+- Apply configuration from config_1080p.csv to all imported cameras
+- Validate the configuration on each camera
+- Prompt to export results to CSV if desired
+
+### Workflow 2: Different Configuration Profiles
+
 ```bash
-# 1. Import and save configuration
-./onvif-manager.exe config import config_1080p.csv
+# Apply 1080p configuration to first group
+./onvif-manager.exe config apply group1_cameras.csv config_1080p.csv
 
-# 2. Verify saved configuration
-./onvif-manager.exe config show
+# Apply 720p configuration to second group
+./onvif-manager.exe config apply group2_cameras.csv config_720p.csv
 
-# 3. Apply to different camera groups
-./onvif-manager.exe config apply-to group1_cameras.csv
-./onvif-manager.exe config apply-to group2_cameras.csv
-
-# 4. Export results
-./onvif-manager.exe export validation_results.csv
+# Apply 4K configuration to third group
+./onvif-manager.exe config apply group3_cameras.csv config_4k.csv
 ```
 
-### Workflow 3: Camera Selection and Testing
+### Workflow 3: Web Interface Management
+
 ```bash
-# 1. Test camera selection first
-./onvif-manager.exe select cameras_to_test.csv
+# Start the web server
+./onvif-manager.exe web
 
-# 2. If selection looks good, apply configuration
-./onvif-manager.exe config apply cameras_to_test.csv config_settings.csv
-```
-
-### Workflow 4: Manual Configuration
-```bash
-# 1. Set configuration manually
-./onvif-manager.exe config set 1920 1080 25 3072
-
-# 2. Apply to cameras
-./onvif-manager.exe config apply-to cameras.csv
-
-# 3. Check and export results
-./onvif-manager.exe export manual_config_results.csv
+# Access web interface at http://localhost:8090
+# - Import cameras using the web interface
+# - Apply configurations through the UI
+# - View and export results
 ```
 
 ## ⚙️ Configuration Parameters
@@ -251,12 +281,19 @@ The system validates each configuration by:
 
 ## 🔧 Advanced Usage
 
-### Environment Setup
-```bash
-# Ensure cameras.json is configured
-cp config/cameras.json.example config/cameras.json
-# Edit cameras.json with your camera details
+### Working with Fake Cameras
+You can create simulated cameras for testing by setting `isfake` to `true` in your CSV:
+
+```csv
+ip,username,password,isfake
+192.168.1.100,admin,admin123,true
+192.168.1.101,admin,admin123,true
 ```
+
+Fake cameras will:
+- Always report successful configuration
+- Simulate expected validation results
+- Not attempt to make actual network connections
 
 ### Batch Operations
 ```bash
@@ -275,7 +312,7 @@ cp config/cameras.json.example config/cameras.json
 ./onvif-manager.exe config apply all_cameras.csv test_config.csv
 
 # Export detailed results
-./onvif-manager.exe export full_validation_$(date +%Y%m%d).csv
+./onvif-manager.exe export full_validation_results.csv
 ```
 
 ## 🚨 Error Handling
@@ -336,11 +373,54 @@ go build -o onvif-manager.exe cmd/app/main.go
 
 ## 📝 Notes
 
+- **Simplified CLI Flow**: The main CLI workflow is a single command that imports cameras and applies configuration
+- **In-Memory Storage**: All camera and configuration data is stored in memory only
+- **No Persistence**: Camera data will be lost when the application is restarted
+- **Single Process Execution**: The `config apply` command handles the entire workflow in a single process
+- **Camera CSV Format**: The first CSV must contain full camera details (IP, username, password, etc.)
+- **Configuration CSV Format**: The second CSV must contain configuration parameters (width, height, fps, bitrate)
 - **Simulated Cameras**: Cameras marked as `IsFake: true` will show successful results without actual network calls
 - **File Paths**: All CSV file paths are relative to the executable location
 - **Port Configuration**: Default port is 8090 for both web and API modes
-- **CORS**: API server includes CORS headers for cross-origin requests
-- **Validation Storage**: Last validation results are automatically stored for export
+- **Web Alternative**: For interactive management, use `./onvif-manager.exe web` and access http://localhost:8090
+
+## 🔀 CLI Usage Approaches
+
+Due to the in-memory design, we've simplified the CLI to a single command workflow:
+
+### Simplified CLI Approach (Recommended)
+The best approach is to use one command that does everything:
+
+```bash
+./onvif-manager.exe config apply cameras.csv config_1080p.csv
+```
+
+This single command:
+1. Imports all cameras from the first CSV file
+2. Applies configuration settings from the second CSV file 
+3. Validates the applied configuration
+4. Prompts to export results to a CSV file
+
+### Web Server Alternative
+For more interactive management, you can use the web interface:
+
+```bash
+# Start the web server
+./onvif-manager.exe web
+```
+
+Then access the web interface at http://localhost:8090 to:
+- Add/import cameras
+- Apply configurations
+- View and export results
+
+### API Endpoints
+The API endpoints can also be accessed programmatically:
+```
+POST   http://localhost:8090/api/cameras     # Add or import cameras
+GET    http://localhost:8090/api/cameras     # List cameras  
+POST   http://localhost:8090/api/config      # Apply configuration
+```
 
 ## 🆘 Help and Support
 

@@ -1,14 +1,19 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
-
-	"onvif_manager/internal/backend/config"
 )
+
+// In-memory default config
+var inMemoryConfig = SavedConfig{
+	Width:       1920,
+	Height:      1080,
+	FPS:         25,
+	Bitrate:     4096,
+	Source:      "default",
+	LastUpdated: time.Now().Format("2006-01-02 15:04:05"),
+}
 
 // ConfigService handles saved configuration operations
 type ConfigService struct{}
@@ -18,82 +23,30 @@ func NewConfigService() *ConfigService {
 	return &ConfigService{}
 }
 
-// getSavedConfigPath returns the path to the saved config file
-func (cs *ConfigService) getSavedConfigPath() (string, error) {
-	configDir, err := config.FindConfigPath()
-	if err != nil {
-		return "", fmt.Errorf("failed to find config directory: %w", err)
-	}
-
-	// Get the directory containing cameras.json and use it for saved_config.json
-	configDirPath := filepath.Dir(configDir)
-	return filepath.Join(configDirPath, "saved_config.json"), nil
-}
-
-// LoadSavedConfig loads the saved configuration from file
+// LoadSavedConfig returns the current in-memory config
 func (cs *ConfigService) LoadSavedConfig() (*SavedConfig, error) {
-	configPath, err := cs.getSavedConfigPath()
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		// Return default config if file doesn't exist
-		return cs.GetDefaultConfig(), nil
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read saved config file: %w", err)
-	}
-
-	var savedConfig SavedConfig
-	if err := json.Unmarshal(data, &savedConfig); err != nil {
-		return nil, fmt.Errorf("failed to parse saved config: %w", err)
-	}
-
-	return &savedConfig, nil
+	return cs.GetDefaultConfig(), nil
 }
 
-// SaveConfig saves the configuration to file
+// SaveConfig is a no-op in stateless mode
 func (cs *ConfigService) SaveConfig(config *SavedConfig) error {
-	configPath, err := cs.getSavedConfigPath()
-	if err != nil {
-		return err
-	}
-
-	// Update timestamp and ensure directory exists
-	config.LastUpdated = time.Now().Format("2006-01-02 15:04:05")
-
-	configDir := filepath.Dir(configPath)
-	if err := os.MkdirAll(configDir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write saved config: %w", err)
-	}
-
+	// Update the in-memory config instead of saving to file
+	inMemoryConfig = *config
+	inMemoryConfig.LastUpdated = time.Now().Format("2006-01-02 15:04:05")
 	return nil
 }
 
-// ImportFromConfigData saves a ConfigData as SavedConfig
+// ImportFromConfigData updates the in-memory config
 func (cs *ConfigService) ImportFromConfigData(configData *ConfigData, source string) error {
-	savedConfig := &SavedConfig{
-		Width:   configData.Width,
-		Height:  configData.Height,
-		FPS:     configData.FPS,
-		Bitrate: configData.Bitrate,
-		Source:  source,
+	inMemoryConfig = SavedConfig{
+		Width:       configData.Width,
+		Height:      configData.Height,
+		FPS:         configData.FPS,
+		Bitrate:     configData.Bitrate,
+		Source:      source,
+		LastUpdated: time.Now().Format("2006-01-02 15:04:05"),
 	}
-
-	return cs.SaveConfig(savedConfig)
+	return nil
 }
 
 // UpdateManually updates the saved config with manual values
@@ -109,16 +62,11 @@ func (cs *ConfigService) UpdateManually(width, height, fps, bitrate int) error {
 	return cs.SaveConfig(savedConfig)
 }
 
-// GetDefaultConfig returns a default configuration
+// GetDefaultConfig returns the current in-memory configuration
 func (cs *ConfigService) GetDefaultConfig() *SavedConfig {
-	return &SavedConfig{
-		Width:       1920,
-		Height:      1080,
-		FPS:         30,
-		Bitrate:     4096,
-		LastUpdated: time.Now().Format("2006-01-02 15:04:05"),
-		Source:      "default",
-	}
+	// Return a copy of the in-memory config to avoid external modifications
+	config := inMemoryConfig
+	return &config
 }
 
 // ValidateConfig validates configuration values

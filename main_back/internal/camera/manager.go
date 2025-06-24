@@ -85,9 +85,24 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 		Username: username,
 		Password: password,
 		IsFake:   isFake,
-	}
-	// Add the new camera to the in-memory list
+	} // Add the new camera to the in-memory list
 	inMemoryCameras = append(inMemoryCameras, newCamera)
+	// Initialize the camera client and add it to connectedCameras
+	if isFake {
+		// Create a fake camera client
+		client := NewFakeCameraClient(newCamera)
+		connectedCameras[newID] = client
+	} else {
+		// Attempt to create a real camera client
+		client, err := NewCameraClient(newCamera)
+		if err != nil {
+			// Log the error but don't fail - we still want to add the camera to the list
+			fmt.Printf("Warning: Failed to initialize camera client for %s: %v\n", newID, err)
+		} else {
+			// Add to connected cameras
+			connectedCameras[newID] = client
+		}
+	}
 
 	// Return the new camera ID
 	return newID, nil

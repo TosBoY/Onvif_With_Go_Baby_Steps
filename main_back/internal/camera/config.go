@@ -9,6 +9,13 @@ import (
 
 // GetProfilesAndConfigs returns all profile tokens and config tokens.
 func GetProfilesAndConfigs(client *CameraClient) (profileTokens, configTokens []string, err error) {
+	// Handle fake cameras with simulated data
+	if client.Camera.IsFake {
+		// For fake cameras, return simulated profile and config tokens
+		return []string{"FakeProfile"}, []string{"FakeConfig"}, nil
+	}
+
+	// For real cameras, proceed with actual ONVIF calls
 	resp, err := client.Media.GetProfiles(&media.GetProfiles{})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get profiles: %w", err)
@@ -29,6 +36,21 @@ func GetProfilesAndConfigs(client *CameraClient) (profileTokens, configTokens []
 
 // GetCurrentEncoderOptions returns the available encoder options for a given config.
 func GetCurrentEncoderOptions(client *CameraClient, profileToken, configToken string) (models.EncoderOption, error) {
+	// Handle fake cameras with simulated data
+	if client.Camera.IsFake {
+		// For fake cameras, return simulated encoder options
+		return models.EncoderOption{
+			Resolutions: []models.Resolution{
+				{Width: 1920, Height: 1080},
+				{Width: 1280, Height: 720},
+				{Width: 3840, Height: 2160},
+			},
+			FPSOptions: []int{10, 15, 25, 30},
+			Bitrate:    []int{2048, 4096, 8192},
+		}, nil
+	}
+
+	// For real cameras, proceed with actual ONVIF calls
 	resp, err := client.Media.GetVideoEncoderConfigurationOptions(&media.GetVideoEncoderConfigurationOptions{
 		ConfigurationToken: media.ReferenceToken(configToken),
 		ProfileToken:       media.ReferenceToken(profileToken),
@@ -71,6 +93,21 @@ func GetCurrentEncoderOptions(client *CameraClient, profileToken, configToken st
 
 // GetCurrentConfig retrieves the actual current video encoder configuration.
 func GetCurrentConfig(client *CameraClient, configToken string) (models.EncoderConfig, error) {
+	// Handle fake cameras with simulated data
+	if client.Camera.IsFake {
+		// Return default configuration for fake cameras
+		return models.EncoderConfig{
+			Resolution: models.Resolution{
+				Width:  1920,
+				Height: 1080,
+			},
+			Quality: 6,
+			FPS:     25,
+			Bitrate: 4096,
+		}, nil
+	}
+
+	// For real cameras, proceed with actual ONVIF calls
 	resp, err := client.Media.GetVideoEncoderConfiguration(&media.GetVideoEncoderConfiguration{
 		ConfigurationToken: media.ReferenceToken(configToken),
 	})
@@ -92,7 +129,12 @@ func GetCurrentConfig(client *CameraClient, configToken string) (models.EncoderC
 
 // SetEncoderConfig updates the camera's encoder configuration.
 func SetEncoderConfig(client *CameraClient, configToken string, config models.EncoderConfig, input models.EncoderConfig) error {
+	// Handle fake cameras - just return success without doing anything
+	if client.Camera.IsFake {
+		return nil
+	}
 
+	// For real cameras, proceed with actual ONVIF calls
 	resp, _ := client.Media.GetVideoEncoderConfiguration(&media.GetVideoEncoderConfiguration{
 		ConfigurationToken: media.ReferenceToken(configToken),
 	})

@@ -7,12 +7,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"onvif_manager/internal/backend/camera"
-	"onvif_manager/internal/backend/config"
 	"onvif_manager/internal/backend/ffmpeg"
 	"onvif_manager/internal/backend/vlc"
 	"onvif_manager/pkg/models"
@@ -33,12 +33,8 @@ func RegisterRoutes(r *mux.Router) {
 }
 
 func HandleGetCameras(w http.ResponseWriter, r *http.Request) {
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, "Failed to load camera list", http.StatusInternalServerError)
-		return
-	}
+	// Get cameras from in-memory storage instead of CSV file
+	cameras := camera.GetAllCameras()
 	json.NewEncoder(w).Encode(cameras)
 }
 
@@ -561,6 +557,22 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	log.Printf("\n")
+
+	// Collect configuration errors separately
+	configurationErrors := make([]map[string]interface{}, 0)
+	for _, cameraID := range cameraIDs {
+		if result, exists := results[cameraID]; exists && !result.Success {
+			errorMessage := "Configuration failed - camera not reachable"
+			if result.Error != nil {
+				errorMessage = result.Error.Error()
+			}
+			configurationErrors = append(configurationErrors, map[string]interface{}{
+				"cameraId": cameraID,
+				"error":    errorMessage,
+			})
+		}
+	}
+
 	// Prepare the final response
 	finalResponse := map[string]interface{}{
 		"status": "configuration applied",
@@ -572,7 +584,8 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			"fps":     input.FPS,
 			"bitrate": input.Bitrate,
 		},
-		"results": make(map[string]interface{}),
+		"results":             make(map[string]interface{}),
+		"configurationErrors": configurationErrors,
 	}
 
 	// Add individual camera results
@@ -705,7 +718,9 @@ func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received /export-validation-csv request")
 
 	var input struct {
-		Validation interface{} `json:"validation"`
+		Validation          interface{}   `json:"validation"`
+		ConfigurationErrors []interface{} `json:"configurationErrors"`
+		CameraOrder         []string      `json:"cameraOrder"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -714,29 +729,43 @@ func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Validation == nil {
-		log.Println("Error: No validation data provided")
-		http.Error(w, "Validation data is required", http.StatusBadRequest)
-		return
-	}
-	// Convert validation data to map format
-	validationMap, err := convertValidationToMap(input.Validation)
-	if err != nil {
-		log.Printf("Error converting validation data: %v", err)
-		http.Error(w, fmt.Sprintf("Invalid validation data format: %v", err), http.StatusBadRequest)
+	if input.Validation == nil && len(input.ConfigurationErrors) == 0 {
+		log.Println("Error: No data provided for export")
+		http.Error(w, "Validation data or configuration errors are required", http.StatusBadRequest)
 		return
 	}
 
-	// Load camera information to get IP addresses
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, fmt.Sprintf("Failed to load camera information: %v", err), http.StatusInternalServerError)
-		return
+	// Convert validation data to map format
+	validationMap := make(map[string]interface{})
+	if input.Validation != nil {
+		var err error
+		validationMap, err = convertValidationToMap(input.Validation)
+		if err != nil {
+			log.Printf("Error converting validation data: %v", err)
+			http.Error(w, fmt.Sprintf("Invalid validation data format: %v", err), http.StatusBadRequest)
+			return
+		}
+	}
+	// Get camera information from in-memory storage
+	cameras := camera.GetAllCameras()
+	// Process configuration errors into a map for easy lookup
+	configErrorsMap := make(map[string]string)
+	for _, errItem := range input.ConfigurationErrors {
+		if errMap, ok := errItem.(map[string]interface{}); ok {
+			if cameraID, hasID := errMap["cameraId"]; hasID {
+				if errorMsg, hasError := errMap["error"]; hasError {
+					if id, ok := cameraID.(string); ok {
+						if msg, ok := errorMsg.(string); ok {
+							configErrorsMap[id] = msg
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// Generate CSV content
-	csvContent, err := generateValidationCSV(validationMap, cameras)
+	csvContent, err := generateValidationCSV(validationMap, configErrorsMap, input.CameraOrder, cameras)
 	if err != nil {
 		log.Printf("Error generating CSV: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to generate CSV: %v", err), http.StatusInternalServerError)
@@ -752,7 +781,7 @@ func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 	log.Println("CSV export completed successfully")
 }
 
-func generateValidationCSV(validation map[string]interface{}, cameras []models.Camera) (string, error) {
+func generateValidationCSV(validation map[string]interface{}, configErrors map[string]string, cameraOrder []string, cameras []models.Camera) (string, error) {
 	var csvBuilder strings.Builder
 	writer := csv.NewWriter(&csvBuilder)
 
@@ -761,15 +790,64 @@ func generateValidationCSV(validation map[string]interface{}, cameras []models.C
 	for _, camera := range cameras {
 		cameraMap[camera.ID] = camera
 	}
-
-	// Write CSV header with IP column
-	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual"}
+	// Write CSV header with IP column and notes
+	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "notes"}
 	if err := writer.Write(header); err != nil {
 		return "", fmt.Errorf("failed to write CSV header: %v", err)
 	}
 
-	// Process each camera's validation result
-	for cameraID, validationData := range validation {
+	// Create a list of camera IDs to process in the right order
+	cameraIDs := make([]string, 0)
+
+	// First, use provided camera order if available
+	if len(cameraOrder) > 0 {
+		cameraIDs = cameraOrder
+	} else {
+		// Otherwise, collect all IDs from validation data and config errors
+		idMap := make(map[string]bool)
+
+		// Add IDs from validation results
+		for cameraID := range validation {
+			idMap[cameraID] = true
+		}
+
+		// Add IDs from configuration errors
+		for cameraID := range configErrors {
+			idMap[cameraID] = true
+		}
+
+		// Convert to slice
+		for cameraID := range idMap {
+			cameraIDs = append(cameraIDs, cameraID)
+		}
+
+		// Sort for consistent output
+		sort.Strings(cameraIDs)
+	}
+
+	// Process each camera in order
+	for _, cameraID := range cameraIDs {
+		// Check if this is a configuration error
+		if errorMsg, hasError := configErrors[cameraID]; hasError {
+			// Get camera IP from camera map
+			cameraIP := "Unknown"
+			if camera, exists := cameraMap[cameraID]; exists {
+				cameraIP = camera.IP
+			}
+
+			// Write CSV row for configuration error
+			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
+			if err := writer.Write(row); err != nil {
+				return "", fmt.Errorf("failed to write CSV row for camera %s: %v", cameraID, err)
+			}
+			continue
+		}
+
+		// Process validation data if available
+		validationData, hasValidation := validation[cameraID]
+		if !hasValidation {
+			continue
+		}
 		// Convert interface{} to map[string]interface{}
 		validationMap, ok := validationData.(map[string]interface{})
 		if !ok {
@@ -781,9 +859,9 @@ func generateValidationCSV(validation map[string]interface{}, cameras []models.C
 		cameraIP := "Unknown"
 		if camera, exists := cameraMap[cameraID]; exists {
 			cameraIP = camera.IP
-		}
-		// Extract data with safe type conversion and determine result status
+		} // Extract data with safe type conversion and determine result status
 		result := "FAIL" // Default to fail
+		var notes strings.Builder
 
 		if isValid, exists := validationMap["isValid"]; exists {
 			if valid, ok := isValid.(bool); ok && valid {
@@ -841,18 +919,41 @@ func generateValidationCSV(validation map[string]interface{}, cameras []models.C
 							}
 						}
 					}
-				}
+				} // Determine final result and notes
 
-				// Determine final result
 				if resolutionMatches && fpsMatches && bitrateMatches {
 					result = "PASS"
+					notes.WriteString("All parameters match expected values")
 				} else if resolutionMatches {
 					// Resolution matches but FPS/bitrate doesn't = warning
 					result = "WARNING"
+					if !fpsMatches {
+						notes.WriteString("FPS mismatch")
+					}
+					if !bitrateMatches {
+						if notes.Len() > 0 {
+							notes.WriteString("; ")
+						}
+						notes.WriteString("Bitrate mismatch")
+					}
 				} else {
 					// Resolution doesn't match = fail (this shouldn't happen if isValid=true, but just in case)
 					result = "FAIL"
+					notes.WriteString("Resolution mismatch")
 				}
+			} else {
+				notes.WriteString("Validation failed")
+			}
+		} else {
+			// Get error message if available
+			if errorMsg, hasError := validationMap["error"]; hasError {
+				if msg, ok := errorMsg.(string); ok && msg != "" {
+					notes.WriteString(msg)
+				} else {
+					notes.WriteString("Unknown error")
+				}
+			} else {
+				notes.WriteString("Validation failed without error details")
 			}
 		}
 
@@ -897,9 +998,8 @@ func generateValidationCSV(validation map[string]interface{}, cameras []models.C
 				fpsActual = fmt.Sprintf("%.2f", fps)
 			}
 		}
-
-		// Write CSV row with IP column
-		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual}
+		// Write CSV row with IP column and notes
+		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, notes.String()}
 		if err := writer.Write(row); err != nil {
 			return "", fmt.Errorf("failed to write CSV row for camera %s: %v", cameraID, err)
 		}
@@ -1378,14 +1478,8 @@ func HandleImportCamerasForConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found IP column at index %d", ipColumnIndex)
-
-	// Load existing cameras to match IPs with camera IDs
-	cameras, err := config.LoadCameraList()
-	if err != nil {
-		log.Printf("Error loading camera list: %v", err)
-		http.Error(w, "Failed to load camera list", http.StatusInternalServerError)
-		return
-	}
+	// Get cameras from in-memory storage to match IPs with camera IDs
+	cameras := camera.GetAllCameras()
 
 	// Create a map of IP to camera ID for quick lookup
 	ipToCameraMap := make(map[string]string)

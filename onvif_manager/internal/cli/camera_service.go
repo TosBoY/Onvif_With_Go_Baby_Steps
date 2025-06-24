@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -208,35 +209,73 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
-	// First, export cameras with configuration errors (ones that didn't get to validation)
+	// Collect all camera IDs for sorting
+	allCamIDs := make(map[string]bool)
+
+	// Add IDs from configuration results
 	for cameraID, configResult := range validation.CameraResults {
-		// Skip successful configurations as they will be included in validation results
-		if configResult.Success {
-			continue
-		}
-
-		cameraIP := "Unknown"
-		if camera, exists := cameraMap[cameraID]; exists {
-			cameraIP = camera.IP
-		}
-
-		// Error message from configuration stage
-		errorMsg := ""
-		if configResult.Error != nil {
-			errorMsg = configResult.Error.Error()
-		} else {
-			errorMsg = "Configuration failed"
-		}
-
-		// Write row for configuration error
-		row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
-		if err := writer.Write(row); err != nil {
-			return fmt.Errorf("failed to write CSV row: %w", err)
+		// Only add failed configurations as successful ones are in validation results
+		if !configResult.Success {
+			allCamIDs[cameraID] = true
 		}
 	}
 
-	// Write validation results
-	for cameraID, validationResult := range validation.ValidationResults {
+	// Add IDs from validation results
+	for cameraID := range validation.ValidationResults {
+		allCamIDs[cameraID] = true
+	}
+	// Convert to sorted slice
+	sortedCameraIDs := make([]string, 0, len(allCamIDs))
+	for cameraID := range allCamIDs {
+		sortedCameraIDs = append(sortedCameraIDs, cameraID)
+	}
+	// Sort numerically if camera IDs are numeric
+	sort.Slice(sortedCameraIDs, func(i, j int) bool {
+		// Try to convert to integers for numeric sorting
+		numI, errI := strconv.Atoi(sortedCameraIDs[i])
+		numJ, errJ := strconv.Atoi(sortedCameraIDs[j])
+
+		// If both are valid numbers, sort numerically
+		if errI == nil && errJ == nil {
+			return numI < numJ
+		}
+
+		// Otherwise fall back to string comparison
+		return sortedCameraIDs[i] < sortedCameraIDs[j]
+	})
+
+	// Process each camera in sorted order
+	for _, cameraID := range sortedCameraIDs {
+		// Check if this camera had a configuration error
+		if configResult, exists := validation.CameraResults[cameraID]; exists && !configResult.Success {
+			cameraIP := "Unknown"
+			if camera, exists := cameraMap[cameraID]; exists {
+				cameraIP = camera.IP
+			}
+
+			// Error message from configuration stage
+			errorMsg := ""
+			if configResult.Error != nil {
+				errorMsg = configResult.Error.Error()
+			} else {
+				errorMsg = "Configuration failed"
+			}
+
+			// Write row for configuration error
+			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
+			if err := writer.Write(row); err != nil {
+				return fmt.Errorf("failed to write CSV row: %w", err)
+			}
+
+			// Skip to next camera since we've handled this one
+			continue
+		}
+
+		// Process validation results if available
+		validationResult, exists := validation.ValidationResults[cameraID]
+		if !exists {
+			continue
+		}
 		cameraIP := "Unknown"
 		if camera, exists := cameraMap[cameraID]; exists {
 			cameraIP = camera.IP

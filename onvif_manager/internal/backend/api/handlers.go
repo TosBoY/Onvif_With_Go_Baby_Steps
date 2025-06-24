@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -717,12 +718,6 @@ func HandleVLC(w http.ResponseWriter, r *http.Request) {
 func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received /export-validation-csv request")
 
-	// Check if the request has the forceNumericSort parameter
-	forceNumericSort := r.URL.Query().Get("forceNumericSort") == "true"
-	if forceNumericSort {
-		log.Println("Force numeric sorting enabled for export")
-	}
-
 	var input struct {
 		Validation          interface{}   `json:"validation"`
 		ConfigurationErrors []interface{} `json:"configurationErrors"`
@@ -768,11 +763,10 @@ func HandleExportValidationCSV(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-	} // Always force numeric sorting for consistency with CLI output
-	// This will now ignore any camera order provided by the frontend
-	log.Println("Forcing numeric sorting for consistent output with CLI")
+	}
 
-	csvContent, err := generateValidationCSV(validationMap, configErrorsMap, nil, cameras)
+	// Generate CSV content
+	csvContent, err := generateValidationCSV(validationMap, configErrorsMap, input.CameraOrder, cameras)
 	if err != nil {
 		log.Printf("Error generating CSV: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to generate CSV: %v", err), http.StatusInternalServerError)
@@ -802,10 +796,10 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 	if err := writer.Write(header); err != nil {
 		return "", fmt.Errorf("failed to write CSV header: %v", err)
 	}
-
 	// Create a list of camera IDs to process in the right order
 	cameraIDs := make([]string, 0)
-	// Always collect all IDs from validation data and config errors first
+
+	// Collect all IDs from validation data and config errors
 	idMap := make(map[string]bool)
 
 	// Add IDs from validation results
@@ -818,53 +812,25 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 		idMap[cameraID] = true
 	}
 
-	// Convert to slice for sorting
+	// Convert to slice
 	for cameraID := range idMap {
 		cameraIDs = append(cameraIDs, cameraID)
 	}
-	// Always sort numerically regardless of provided camera order
-	// This ensures consistent sorting behavior between CLI and web exports
-	// We'll collect all camera IDs regardless of provided order
-	// This ensures we have all IDs from both validation and config errors
-	if len(cameraOrder) > 0 {
-		// Log the order provided by frontend for debugging
-		log.Printf("Frontend provided camera order: %v", cameraOrder)
 
-		// Track which IDs are in the provided order
-		providedSet := make(map[string]bool)
-		for _, id := range cameraOrder {
-			providedSet[id] = true
-			// Make sure this ID is in our final list
-			if !idMap[id] {
-				cameraIDs = append(cameraIDs, id)
-			}
-		}
-
-		// Make sure we haven't missed any IDs
-		for cameraID := range idMap {
-			if !providedSet[cameraID] {
-				log.Printf("Adding missing camera ID %s to export list", cameraID)
-			}
-		}
-	}
-	// Always sort numerically for consistent behavior with CLI
-	log.Printf("Sorting %d camera IDs numerically for CSV export", len(cameraIDs))
+	// Always sort by cam_id numerically, regardless of whether cameraOrder was provided
 	sort.Slice(cameraIDs, func(i, j int) bool {
-		// Try to convert to integers for numeric sorting
-		numI, errI := strconv.Atoi(cameraIDs[i])
-		numJ, errJ := strconv.Atoi(cameraIDs[j])
+		// Extract numeric part using regular expression
+		idI := extractNumericID(cameraIDs[i])
+		idJ := extractNumericID(cameraIDs[j])
 
-		// If both are valid numbers, sort numerically
-		if errI == nil && errJ == nil {
-			return numI < numJ
+		// If both have numeric IDs, compare them numerically
+		if idI != -1 && idJ != -1 {
+			return idI < idJ
 		}
 
-		// Otherwise fall back to string comparison
+		// Fall back to string comparison if not both numeric
 		return cameraIDs[i] < cameraIDs[j]
 	})
-
-	// Log the sorted order for debugging
-	log.Printf("Final sorted camera order for CSV: %v", cameraIDs)
 
 	// Process each camera in order
 	for _, cameraID := range cameraIDs {
@@ -1052,6 +1018,26 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 	}
 
 	return csvBuilder.String(), nil
+}
+
+// extractNumericID extracts the numeric part from a camera ID
+// Returns -1 if no numeric part is found
+func extractNumericID(id string) int {
+	// First, try to parse the entire ID as a number (for cases like "1", "2", etc.)
+	if num, err := strconv.Atoi(id); err == nil {
+		return num
+	}
+
+	// If that fails, extract numeric part using regex
+	re := regexp.MustCompile(`^[^\d]*(\d+).*$`)
+	matches := re.FindStringSubmatch(id)
+
+	if len(matches) > 1 {
+		if num, err := strconv.Atoi(matches[1]); err == nil {
+			return num
+		}
+	}
+	return -1
 }
 
 func convertValidationToMap(validation interface{}) (map[string]interface{}, error) {

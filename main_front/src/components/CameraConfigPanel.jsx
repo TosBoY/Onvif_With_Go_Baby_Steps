@@ -223,21 +223,58 @@ const CameraConfigPanel = ({
             setResult({ 
               success: true, 
               message: `CSV configuration applied successfully to ${successfulCameras.length} camera(s): ${successfulCameras.join(', ')}` 
-            });
-          } else if (successfulCameras.length > 0) {
+            });          } else if (successfulCameras.length > 0) {
             const successMessage = `Applied to cameras ${successfulCameras.join(', ')}`;
-            const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+            
+            // Format error details with better readability and length limit
+            let errorDetails = '';
+            const maxFailedToShow = 3; // Show details for at most 3 cameras
+            const totalFailed = failedCameras.length;
+            
+            // Show truncated error message for first few cameras
+            for (let i = 0; i < Math.min(maxFailedToShow, totalFailed); i++) {
+              const error = failedCameras[i];
+              // Truncate each error message to a reasonable length
+              let errorMsg = error.error;
+              if (errorMsg.length > 80) {
+                errorMsg = errorMsg.substring(0, 80) + '...';
+              }
+              errorDetails += `Camera ${error.cameraId}: ${errorMsg}\n`;
+            }
+            
+            // Add note if more failures were omitted
+            if (totalFailed > maxFailedToShow) {
+              errorDetails += `\n...and ${totalFailed - maxFailedToShow} more camera(s) with errors`;
+            }
             
             setResult({ 
               success: false, 
-              message: `Partial success: ${successMessage}. Failed cameras: ${errorDetails}` 
-            });
-          } else {
-            const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+              message: `Partial Success\n\n✓ Successfully configured: ${successfulCameras.join(', ')}\n\n❌ Failed configuration:\n${errorDetails}` 
+            });          } else {
+            // Format error details with better readability and length limit
+            let errorDetails = '';
+            const maxFailedToShow = 5; // Show details for at most 5 cameras when all failed
+            const totalFailed = failedCameras.length;
+            
+            // Show truncated error message for first few cameras
+            for (let i = 0; i < Math.min(maxFailedToShow, totalFailed); i++) {
+              const error = failedCameras[i];
+              // Truncate each error message to a reasonable length
+              let errorMsg = error.error;
+              if (errorMsg.length > 80) {
+                errorMsg = errorMsg.substring(0, 80) + '...';
+              }
+              errorDetails += `Camera ${error.cameraId}: ${errorMsg}\n`;
+            }
+            
+            // Add note if more failures were omitted
+            if (totalFailed > maxFailedToShow) {
+              errorDetails += `\n...and ${totalFailed - maxFailedToShow} more camera(s) with errors`;
+            }
             
             setResult({ 
               success: false, 
-              message: `Failed to apply CSV configuration to any cameras. Errors: ${errorDetails}` 
+              message: `❌ Failed to apply CSV configuration to any cameras.\n\nErrors:\n${errorDetails}` 
             });
           }
         } catch (error) {
@@ -360,23 +397,60 @@ const CameraConfigPanel = ({
         setResult({ 
           success: true, 
           message: `Configuration applied successfully to ${successfulCameras.length} camera(s): ${successfulCameras.join(', ')}` 
-        });
-      } else if (successfulCameras.length > 0) {
+        });      } else if (successfulCameras.length > 0) {
         // For partial success, be more specific about what worked
         const successMessage = `Applied to cameras ${successfulCameras.join(', ')}`;
-        const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+        
+        // Format error details with better readability and length limit
+        let errorDetails = '';
+        const maxFailedToShow = 3; // Show details for at most 3 cameras
+        const totalFailed = failedCameras.length;
+        
+        // Show truncated error message for first few cameras
+        for (let i = 0; i < Math.min(maxFailedToShow, totalFailed); i++) {
+          const error = failedCameras[i];
+          // Truncate each error message to a reasonable length
+          let errorMsg = error.error;
+          if (errorMsg.length > 80) {
+            errorMsg = errorMsg.substring(0, 80) + '...';
+          }
+          errorDetails += `Camera ${error.cameraId}: ${errorMsg}\n`;
+        }
+        
+        // Add note if more failures were omitted
+        if (totalFailed > maxFailedToShow) {
+          errorDetails += `\n...and ${totalFailed - maxFailedToShow} more camera(s) with errors`;
+        }
         
         setResult({ 
           success: false, 
-          message: `Partial success: ${successMessage}. Failed cameras: ${errorDetails}` 
-        });
-      } else {
+          message: `Partial Success\n\n✓ Successfully configured: ${successfulCameras.join(', ')}\n\n❌ Failed configuration:\n${errorDetails}` 
+        });      } else {
         // For complete failure, show detailed error for each camera
-        const errorDetails = failedCameras.map(e => `${e.cameraId}: ${e.error}`).join('; ');
+        // Format error details with better readability and length limit
+        let errorDetails = '';
+        const maxFailedToShow = 5; // Show details for at most 5 cameras when all failed
+        const totalFailed = failedCameras.length;
+        
+        // Show truncated error message for first few cameras
+        for (let i = 0; i < Math.min(maxFailedToShow, totalFailed); i++) {
+          const error = failedCameras[i];
+          // Truncate each error message to a reasonable length
+          let errorMsg = error.error;
+          if (errorMsg.length > 80) {
+            errorMsg = errorMsg.substring(0, 80) + '...';
+          }
+          errorDetails += `Camera ${error.cameraId}: ${errorMsg}\n`;
+        }
+        
+        // Add note if more failures were omitted
+        if (totalFailed > maxFailedToShow) {
+          errorDetails += `\n...and ${totalFailed - maxFailedToShow} more camera(s) with errors`;
+        }
         
         setResult({ 
           success: false, 
-          message: `Failed to apply configuration to any cameras. Errors: ${errorDetails}` 
+          message: `❌ Failed to apply configuration to any cameras.\n\nErrors:\n${errorDetails}` 
         });
       }
     } catch (error) {
@@ -475,14 +549,20 @@ const CameraConfigPanel = ({
             {selectedCameras.length > 1 ? ` ${selectedCameras.length * 20} seconds ` : ' 20 seconds '}
             to complete as each camera requires time to validate the settings.
           </Typography>
-        </Alert>
-      )}        {result.message && (
+        </Alert>      )}        {result.message && (
         <Alert 
           severity={result.success ? 'success' : 'error'} 
           sx={{ mt: 2 }}
           onClose={() => setResult({ success: false, message: null })}
         >
-          {result.message}
+          <Typography component="pre" sx={{ 
+            fontFamily: 'inherit', 
+            whiteSpace: 'pre-wrap',
+            margin: 0,
+            wordBreak: 'break-word'
+          }}>
+            {result.message}
+          </Typography>
         </Alert>
       )}
         
@@ -492,13 +572,19 @@ const CameraConfigPanel = ({
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>Upload Configuration CSV</DialogTitle>        <DialogContent>
-          {uploadResult && (
+        <DialogTitle>Upload Configuration CSV</DialogTitle>        <DialogContent>          {uploadResult && (
             <Alert 
               severity={uploadResult.success ? "success" : "error"} 
               sx={{ mb: 2, mt: 1 }}
             >
-              {uploadResult.message}
+              <Typography component="pre" sx={{ 
+                fontFamily: 'inherit', 
+                whiteSpace: 'pre-wrap',
+                margin: 0,
+                wordBreak: 'break-word'
+              }}>
+                {uploadResult.message}
+              </Typography>
             </Alert>
           )}
 

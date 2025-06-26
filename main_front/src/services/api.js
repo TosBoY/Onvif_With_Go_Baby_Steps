@@ -239,4 +239,82 @@ export const checkAllCameras = async () => {
   }
 };
 
+// Load camera list from CSV
+export const loadCameraList = async () => {
+  try {
+    console.log('Loading camera list from CSV');
+    const response = await api.get('/load-cam-list');
+    return response.data;
+  } catch (error) {
+    console.error('Error loading camera list:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Check single camera status and configuration
+export const checkSingleCamera = async (cameraId) => {
+  try {
+    console.log(`Checking single camera ID: ${cameraId}`);
+    const response = await api.get(`/check-single-cam/${cameraId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error checking camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Configure single camera
+export const configureSingleCamera = async (cameraId, width, height, fps, bitrate, encoding) => {
+  try {
+    console.log(`Configuring single camera ID: ${cameraId}`, { width, height, fps, bitrate, encoding });
+    const response = await api.post(`/config-single-cam/${cameraId}`, {
+      width,
+      height,
+      fps,
+      bitrate,
+      encoding
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error configuring camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Validate single camera using RTSP stream analysis
+export const validateSingleCamera = async (cameraId) => {
+  try {
+    console.log(`Validating single camera ID: ${cameraId}`);
+    const response = await api.get(`/validate-cam/${cameraId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error validating camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
 export default api;

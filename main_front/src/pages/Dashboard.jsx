@@ -374,7 +374,7 @@ const Dashboard = () => {
       const formData = new FormData();
       formData.append('csvFile', file);
 
-      const response = await fetch('/api/import-cameras-for-config', {
+      const response = await fetch('/api/choose-cam-from-csv', {
         method: 'POST',
         body: formData,
       });

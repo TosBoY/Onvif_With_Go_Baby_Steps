@@ -15,6 +15,7 @@ import (
 
 	"main_back/internal/camera"
 	"main_back/internal/ffmpeg"
+	"main_back/internal/loader"
 	"main_back/internal/vlc"
 	"main_back/pkg/models"
 
@@ -25,9 +26,10 @@ func RegisterRoutes(r *mux.Router) {
 	r.HandleFunc("/cameras", HandleGetCameras).Methods("GET")
 	r.HandleFunc("/cameras", HandleAddCamera).Methods("POST")
 	r.HandleFunc("/cameras/{id}", HandleDeleteCamera).Methods("DELETE")
+	r.HandleFunc("/check-all-cams", HandleCheckAllCams).Methods("GET")
 	r.HandleFunc("/cameras/import-csv", HandleImportCamerasCSV).Methods("POST")
 	r.HandleFunc("/import-config-csv", HandleImportConfigCSV).Methods("POST")
-	r.HandleFunc("/import-cameras-for-config", HandleImportCamerasForConfig).Methods("POST")
+	r.HandleFunc("/choose-cam-from-csv", HandleChooseCamFromCSV).Methods("POST")
 	r.HandleFunc("/apply-config", HandleApplyConfig).Methods("POST")
 	r.HandleFunc("/export-validation-csv", HandleExportValidationCSV).Methods("POST")
 	r.HandleFunc("/vlc", HandleVLC).Methods("POST")
@@ -122,6 +124,221 @@ func HandleDeleteCamera(w http.ResponseWriter, r *http.Request) {
 		"message": fmt.Sprintf("Camera %s successfully deleted", cameraID),
 	}
 	json.NewEncoder(w).Encode(response)
+}
+
+func HandleCheckAllCams(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received request to check all cameras from CSV")
+
+	// Load cameras from CSV file
+	cameras, err := loader.LoadCameraList()
+	if err != nil {
+		log.Printf("Error loading cameras from CSV: %v", err)
+		http.Error(w, fmt.Sprintf("Failed to load cameras from CSV: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Loaded %d cameras from CSV, checking their status...", len(cameras))
+
+	// Initialize response slice
+	var results []map[string]interface{}
+
+	// Check each camera
+	for _, cam := range cameras {
+		log.Printf("Checking camera %s (IP: %s:%d)", cam.ID, cam.IP, cam.Port)
+
+		result := map[string]interface{}{
+			"cameraId": cam.ID,
+			"ip":       cam.IP,
+			"port":     cam.Port,
+			"username": cam.Username,
+			"isFake":   cam.IsFake,
+			"status":   "unknown",
+			"error":    "",
+		}
+
+		// Try to initialize the camera client
+		var client *camera.CameraClient
+		var err error
+
+		if cam.IsFake {
+			// For fake cameras, create a fake client
+			client = camera.NewFakeCameraClient(cam)
+		} else {
+			// For real cameras, try to connect via ONVIF
+			client, err = camera.NewCameraClient(cam)
+			if err != nil {
+				log.Printf("Failed to initialize camera %s: %v", cam.ID, err)
+				result["status"] = "offline"
+				result["error"] = fmt.Sprintf("Failed to initialize: %v", err)
+				results = append(results, result)
+				continue
+			}
+		}
+
+		// Check if camera is fake and handle it differently
+		if client.Camera.IsFake {
+			log.Printf("Camera %s is a simulated device", cam.ID)
+			result["status"] = "online"
+			result["currentConfig"] = map[string]interface{}{
+				"resolution": map[string]int{
+					"width":  1920,
+					"height": 1080,
+				},
+				"fps":      30,
+				"bitrate":  2000,
+				"encoding": "h264",
+				"quality":  5,
+			}
+			result["availableResolutions"] = []map[string]int{
+				{"width": 1920, "height": 1080},
+				{"width": 1280, "height": 720},
+				{"width": 640, "height": 480},
+			}
+			result["profileToken"] = "fake_profile_token"
+			result["configToken"] = "fake_config_token"
+			results = append(results, result)
+			continue
+		}
+
+		// For real cameras, try to get configuration
+		log.Printf("Getting profiles and configs for camera %s (IP: %s:%d)", cam.ID, client.Camera.IP, client.Camera.Port)
+		profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
+		if err != nil {
+			log.Printf("Failed to get camera profiles and configs for %s (IP: %s:%d): %v", cam.ID, client.Camera.IP, client.Camera.Port, err)
+
+			result["status"] = "offline"
+			// Add more specific error information for network issues
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "i/o timeout") || strings.Contains(errorMsg, "dial tcp") {
+				result["error"] = "Network timeout: camera is not responding"
+			} else if strings.Contains(errorMsg, "connection refused") {
+				result["error"] = "Connection refused: check ONVIF port and service"
+			} else if strings.Contains(errorMsg, "no route to host") {
+				result["error"] = "No route to host: check network connectivity"
+			} else {
+				result["error"] = fmt.Sprintf("Failed to get profiles: %v", err)
+			}
+			results = append(results, result)
+			continue
+		}
+
+		if len(profileTokens) == 0 {
+			log.Printf("No profiles found for camera %s", cam.ID)
+			result["status"] = "offline"
+			result["error"] = "No profiles found"
+			results = append(results, result)
+			continue
+		}
+
+		if len(configTokens) == 0 {
+			log.Printf("No video encoder configuration found for camera %s", cam.ID)
+			result["status"] = "offline"
+			result["error"] = "No video encoder configuration found"
+			results = append(results, result)
+			continue
+		}
+
+		// Use the first token found
+		profileToken := profileTokens[0]
+		configToken := configTokens[0]
+		result["profileToken"] = profileToken
+		result["configToken"] = configToken
+
+		log.Printf("Using profile token %s and config token %s for camera %s", profileToken, configToken, cam.ID)
+
+		// Try to get current encoder config
+		log.Printf("Getting current encoder config for camera %s", cam.ID)
+		currentConfig, err := camera.GetCurrentConfig(client, configToken)
+		if err != nil {
+			log.Printf("Failed to get current encoder config for %s: %v", cam.ID, err)
+			result["status"] = "partial"
+			result["error"] = fmt.Sprintf("Failed to get current config: %v", err)
+			results = append(results, result)
+			continue
+		}
+
+		// Try to get available encoder options
+		log.Printf("Getting available encoder options for camera %s", cam.ID)
+		encoderOptions, err := camera.GetCurrentEncoderOptions(client, profileToken, configToken)
+		if err != nil {
+			log.Printf("Failed to get encoder options for %s: %v", cam.ID, err)
+			// Still mark as online since we got the current config
+			result["status"] = "partial"
+			result["error"] = fmt.Sprintf("Failed to get encoder options: %v", err)
+			result["currentConfig"] = map[string]interface{}{
+				"resolution": map[string]int{
+					"width":  currentConfig.Resolution.Width,
+					"height": currentConfig.Resolution.Height,
+				},
+				"fps":      currentConfig.FPS,
+				"bitrate":  currentConfig.Bitrate,
+				"encoding": currentConfig.Encoding,
+				"quality":  currentConfig.Quality,
+			}
+			results = append(results, result)
+			continue
+		}
+
+		// Success - camera is fully online and configured
+		result["status"] = "online"
+		result["currentConfig"] = map[string]interface{}{
+			"resolution": map[string]int{
+				"width":  currentConfig.Resolution.Width,
+				"height": currentConfig.Resolution.Height,
+			},
+			"fps":      currentConfig.FPS,
+			"bitrate":  currentConfig.Bitrate,
+			"encoding": currentConfig.Encoding,
+			"quality":  currentConfig.Quality,
+		}
+
+		// Prepare available resolutions
+		availableResolutions := make([]map[string]int, len(encoderOptions.Resolutions))
+		for i, resolution := range encoderOptions.Resolutions {
+			availableResolutions[i] = map[string]int{
+				"width":  resolution.Width,
+				"height": resolution.Height,
+			}
+		}
+		result["availableResolutions"] = availableResolutions
+
+		// Add encoder options information
+		result["encoderOptions"] = map[string]interface{}{
+			"availableFPS":     encoderOptions.FPSOptions,
+			"availableBitrate": encoderOptions.Bitrate,
+			"availableQuality": encoderOptions.Quality,
+		}
+
+		log.Printf("Successfully checked camera %s - status: online", cam.ID)
+		results = append(results, result)
+	}
+
+	log.Printf("Completed checking all %d cameras", len(cameras))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"cameras": results,
+		"total":   len(cameras),
+		"summary": calculateStatusSummary(results),
+	})
+}
+
+// Helper function to calculate status summary
+func calculateStatusSummary(results []map[string]interface{}) map[string]int {
+	summary := map[string]int{
+		"online":  0,
+		"offline": 0,
+		"partial": 0,
+		"unknown": 0,
+	}
+
+	for _, result := range results {
+		if status, ok := result["status"].(string); ok {
+			summary[status]++
+		}
+	}
+
+	return summary
 }
 
 func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
@@ -1455,8 +1672,8 @@ func HandleImportConfigCSV(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Config CSV import completed successfully: %+v", configData)
 }
 
-func HandleImportCamerasForConfig(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received /import-cameras-for-config request")
+func HandleChooseCamFromCSV(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received /choose-cam-from-csv request")
 
 	// Parse multipart form with a 10MB size limit
 	err := r.ParseMultipartForm(10 << 20) // 10MB

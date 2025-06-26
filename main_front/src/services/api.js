@@ -60,15 +60,31 @@ export const applyConfig = async (cameraIds, width, height, fps, bitrate, encodi
   }
 };
 
-export const launchVLC = async (cameraId) => {
+// Get camera detailed information
+export const getCameraInfo = async (cameraId) => {
   try {
-    console.log('Launching VLC for camera:', cameraId);
-    const response = await api.post('/vlc', {
-      cameraId
-    });
+    console.log(`Getting camera info for ID: ${cameraId}`);
+    const response = await api.get(`/cameras/${cameraId}/info`);
     return response.data;
   } catch (error) {
-    console.error('Error launching VLC:', error);
+    console.error(`Error getting camera info for ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+export const launchVLC = async (cameraId) => {
+  try {
+    console.log(`Launching VLC for camera ID: ${cameraId}`);
+    const response = await api.post('/vlc', { cameraId });
+    return response.data;
+  } catch (error) {
+    console.error(`Error launching VLC for ${cameraId}:`, error);
     if (error.response) {
       throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
     } else if (error.request) {
@@ -197,6 +213,24 @@ export const importConfigCSV = async (file) => {
     console.error('Error importing config CSV:', error);
     if (error.response) {
       throw new Error(error.response.data.error || `Server error: ${error.response.status}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Check all cameras status from CSV
+export const checkAllCameras = async () => {
+  try {
+    console.log('Checking all cameras from CSV');
+    const response = await api.get('/check-all-cams');
+    return response.data;
+  } catch (error) {
+    console.error('Error checking all cameras:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
     } else if (error.request) {
       throw new Error('Network error: No response from server');
     } else {

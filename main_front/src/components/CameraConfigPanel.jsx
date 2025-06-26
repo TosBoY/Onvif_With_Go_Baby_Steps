@@ -43,6 +43,7 @@ const CameraConfigPanel = ({
   const [height, setHeight] = useState(720);
   const [fps, setFps] = useState(25); // Set default FPS to 25
   const [bitrate, setBitrate] = useState(''); // Add bitrate state
+  const [encoding, setEncoding] = useState('H264'); // Default encoding to H264
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState({ success: false, message: null });
 
@@ -88,6 +89,10 @@ const CameraConfigPanel = ({
       // Allow partial input (like just typing numbers)
       setBitrate(value);
     }
+  };
+  
+  const handleEncodingChange = (event) => {
+    setEncoding(event.target.value);
   };
 
   // CSV Upload handlers
@@ -151,6 +156,7 @@ const CameraConfigPanel = ({
       setHeight(config.height);
       setFps(config.fps);
       setBitrate(config.bitrate || '');
+      setEncoding(config.encoding || 'H264'); // Default to H264 if not provided
       handleUploadDialogClose();
       
       // If cameras are selected, apply the configuration immediately
@@ -168,7 +174,7 @@ const CameraConfigPanel = ({
 
         try {
           // Apply the configuration using the same logic as handleApplyConfig
-          const batchResult = await applyConfig(selectedCameras, config.width, config.height, config.fps, config.bitrate || 0);
+          const batchResult = await applyConfig(selectedCameras, config.width, config.height, config.fps, config.bitrate || 0, config.encoding || 'H264');
           console.log('Batch configuration result from CSV:', batchResult);
 
           // Process response - extract validation results
@@ -290,7 +296,7 @@ const CameraConfigPanel = ({
         // No cameras selected, just show that configuration was loaded
         setResult({ 
           success: true, 
-          message: `Configuration loaded from CSV: ${config.width}x${config.height}, ${config.fps} FPS, ${config.bitrate || 'Auto'} kbps. Select cameras to apply configuration.` 
+          message: `Configuration loaded from CSV: ${config.width}x${config.height}, ${config.fps} FPS, ${config.bitrate || 'Auto'} kbps, ${config.encoding || 'H264'} encoding. Select cameras to apply configuration.` 
         });
       }
     }
@@ -337,7 +343,7 @@ const CameraConfigPanel = ({
     });
       // Use batch mode to send all camera IDs at once
     try {      // Call API with array of camera IDs (batch mode) - ensure fps is a number
-      const batchResult = await applyConfig(selectedCameras, width, height, fpsValue, bitrateValue);
+      const batchResult = await applyConfig(selectedCameras, width, height, fpsValue, bitrateValue, encoding);
       console.log('Batch configuration result:', batchResult);      // Process response - extract validation results
       const validations = [];
       const successfulCameras = [];
@@ -524,6 +530,24 @@ const CameraConfigPanel = ({
               sx: { color: 'white' }
             }}
           />
+        </Grid>
+        
+        <Grid item xs={12} md={6} sx={{ mt: -1 }}>
+          <TextField
+            select
+            label="Video Encoding"
+            value={encoding}
+            onChange={handleEncodingChange}
+            fullWidth
+            margin="dense"
+            helperText="Select video encoding format (H.264 is more compatible)"
+            InputProps={{
+              sx: { color: 'white' }
+            }}
+          >
+            <MenuItem value="H264">H.264 (AVC)</MenuItem>
+            <MenuItem value="H265">H.265 (HEVC)</MenuItem>
+          </TextField>
         </Grid>
       </Grid><Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
         <Button 

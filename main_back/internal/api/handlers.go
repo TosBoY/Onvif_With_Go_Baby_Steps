@@ -133,6 +133,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		Height    int      `json:"height"`
 		FPS       int      `json:"fps"`
 		Bitrate   int      `json:"bitrate"`
+		Encoding  string   `json:"encoding"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -144,12 +145,12 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	var cameraIDs []string
 	if len(input.CameraIDs) > 0 {
 		cameraIDs = input.CameraIDs
-		log.Printf("Applying config for multiple cameras (%d): Width: %d, Height: %d, FPS: %d, Bitrate: %d",
-			len(cameraIDs), input.Width, input.Height, input.FPS, input.Bitrate)
+		log.Printf("Applying config for multiple cameras (%d): Width: %d, Height: %d, FPS: %d, Bitrate: %d, Encoding: %s",
+			len(cameraIDs), input.Width, input.Height, input.FPS, input.Bitrate, input.Encoding)
 	} else if input.CameraID != "" {
 		cameraIDs = []string{input.CameraID}
-		log.Printf("Applying config for single camera %s: Width: %d, Height: %d, FPS: %d, Bitrate: %d",
-			input.CameraID, input.Width, input.Height, input.FPS, input.Bitrate)
+		log.Printf("Applying config for single camera %s: Width: %d, Height: %d, FPS: %d, Bitrate: %d, Encoding: %s",
+			input.CameraID, input.Width, input.Height, input.FPS, input.Bitrate, input.Encoding)
 	} else {
 		log.Println("Error: No camera IDs provided in request")
 		http.Error(w, "No camera IDs provided", http.StatusBadRequest)
@@ -203,8 +204,9 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 					"width":  input.Width,
 					"height": input.Height,
 				},
-				"fps":     input.FPS,
-				"bitrate": input.Bitrate,
+				"fps":      input.FPS,
+				"bitrate":  input.Bitrate,
+				"encoding": input.Encoding,
 			}
 			results[cameraID] = result
 			continue
@@ -259,6 +261,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			results[cameraID] = result
 			continue
 		}
+		// log.Printf("Current encoding for camera %s: %+v", cameraID, currentConfig.Encoding)
 
 		// Get available encoder options
 		log.Printf("Getting available encoder options for camera %s", cameraID)
@@ -274,58 +277,13 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Finding closest matching resolution for camera %s", cameraID)
 		closestResolution := camera.FindClosestResolution(targetResolution, encoderOptions.Resolutions)
 		log.Printf("Closest resolution found for camera %s: %dx%d", cameraID, closestResolution.Width, closestResolution.Height)
-		// Check if current configuration already matches the requested configuration
-		currentMatches := currentConfig.Resolution.Width == closestResolution.Width &&
-			currentConfig.Resolution.Height == closestResolution.Height &&
-			currentConfig.FPS == input.FPS &&
-			(input.Bitrate == 0 || currentConfig.Bitrate == input.Bitrate)
 
-		if currentMatches {
-			log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d, Bitrate: %d), skipping config change",
-				cameraID, closestResolution.Width, closestResolution.Height, input.FPS, currentConfig.Bitrate)
-			// Mark as successful but indicate no change was needed
-			result.Success = true
-			result.AppliedConfig = map[string]interface{}{
-				"resolution": map[string]int{
-					"width":  closestResolution.Width,
-					"height": closestResolution.Height,
-				},
-				"fps":       input.FPS,
-				"bitrate":   currentConfig.Bitrate,
-				"unchanged": true, // Indicate no change was needed
-			}
-			result.ResolutionAdjusted = input.Width != closestResolution.Width || input.Height != closestResolution.Height
-
-			// Still get stream URI for validation
-			streamURI, err := client.GetStreamURI(profileToken)
-			if err != nil {
-				log.Printf("Failed to get stream URI for %s: %v", cameraID, err)
-				result.Error = fmt.Errorf("failed to get stream URI: %w", err)
-				results[cameraID] = result
-				continue
-			}
-
-			// Parse and construct the URL with embedded credentials
-			parsedURI, err := url.Parse(streamURI)
-			if err != nil {
-				log.Printf("Failed to parse stream URI for %s: %v", cameraID, err)
-				result.Error = fmt.Errorf("failed to parse stream URI: %w", err)
-				results[cameraID] = result
-				continue
-			}
-
-			fullStreamURL := fmt.Sprintf("%s://%s:%s@%s%s", parsedURI.Scheme, client.Camera.Username, client.Camera.Password, parsedURI.Host, parsedURI.RequestURI())
-			result.StreamURL = fullStreamURL
-
-			results[cameraID] = result
-			continue
-		}
-		// Prepare the new configuration
 		newConfig := models.EncoderConfig{
 			Resolution: closestResolution,
 			Quality:    currentConfig.Quality, // Keep the current quality
 			FPS:        input.FPS,
 			Bitrate:    input.Bitrate,
+			Encoding:   input.Encoding,
 		}
 		log.Printf("Prepared new config for camera %s: %+v", cameraID, newConfig)
 
@@ -366,13 +324,15 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"width":  closestResolution.Width,
 				"height": closestResolution.Height,
 			},
-			"fps":     input.FPS,
-			"bitrate": input.Bitrate,
+			"fps":      input.FPS,
+			"bitrate":  input.Bitrate,
+			"encoding": input.Encoding,
 		}
 		result.ResolutionAdjusted = input.Width != closestResolution.Width || input.Height != closestResolution.Height
 		result.StreamURL = fullStreamURL
 
 		results[cameraID] = result
+		continue
 	}
 
 	// Helper function to find position of a camera ID in the original order
@@ -450,16 +410,17 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		} // Validate the stream using FFmpeg CGO
 		position := findCameraPosition(cameraID)
 		log.Printf("Starting FFmpeg validation for camera %s (position %d in original order)", cameraID, position)
-		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS, input.Bitrate)
+		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS, input.Bitrate, input.Encoding)
 		if validationErr != nil {
 			log.Printf("FFmpeg validation failed for camera %s: %v", cameraID, validationErr)
 			validationResults[cameraID] = map[string]interface{}{
-				"isValid":         false,
-				"error":           validationErr.Error(),
-				"expectedWidth":   input.Width,
-				"expectedHeight":  input.Height,
-				"expectedFPS":     input.FPS,
-				"expectedBitrate": input.Bitrate,
+				"isValid":          false,
+				"error":            validationErr.Error(),
+				"expectedWidth":    input.Width,
+				"expectedHeight":   input.Height,
+				"expectedFPS":      input.FPS,
+				"expectedBitrate":  input.Bitrate,
+				"expectedEncoding": input.Encoding,
 			}
 		} else {
 			// Determine validation status based on business rules
@@ -486,15 +447,17 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 
 			// Create a map from the validation result
 			validationMap := map[string]interface{}{
-				"isValid":         overrideIsValid, // Use our override logic
-				"actualWidth":     validationResult.ActualWidth,
-				"actualHeight":    validationResult.ActualHeight,
-				"actualFPS":       validationResult.ActualFPS,
-				"actualBitrate":   validationResult.ActualBitrate,
-				"expectedWidth":   validationResult.ExpectedWidth,
-				"expectedHeight":  validationResult.ExpectedHeight,
-				"expectedFPS":     validationResult.ExpectedFPS,
-				"expectedBitrate": validationResult.ExpectedBitrate,
+				"isValid":          overrideIsValid, // Use our override logic
+				"actualWidth":      validationResult.ActualWidth,
+				"actualHeight":     validationResult.ActualHeight,
+				"actualFPS":        validationResult.ActualFPS,
+				"actualBitrate":    validationResult.ActualBitrate,
+				"actualEncoding":   validationResult.ActualEncoding,
+				"expectedWidth":    validationResult.ExpectedWidth,
+				"expectedHeight":   validationResult.ExpectedHeight,
+				"expectedFPS":      validationResult.ExpectedFPS,
+				"expectedBitrate":  validationResult.ExpectedBitrate,
+				"expectedEncoding": input.Encoding,
 			}
 
 			// Build warning/error messages
@@ -517,6 +480,16 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			if !bitrateMatches && validationResult.ExpectedBitrate > 0 && validationResult.ActualBitrate > 0 {
 				messages = append(messages, fmt.Sprintf("BITRATE DIFFERENCE (warning): got %d kbps, expected %d kbps",
 					validationResult.ActualBitrate, validationResult.ExpectedBitrate))
+			}
+
+			// Check for encoding mismatches
+			encodingMatches := true
+			if input.Encoding != "" && validationResult.ActualEncoding != "" {
+				encodingMatches = strings.EqualFold(validationResult.ActualEncoding, input.Encoding)
+				if !encodingMatches {
+					messages = append(messages, fmt.Sprintf("ENCODING DIFFERENCE (warning): got %s, expected %s",
+						validationResult.ActualEncoding, input.Encoding))
+				}
 			}
 
 			// Set error/warning message
@@ -582,8 +555,9 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 				"width":  input.Width,
 				"height": input.Height,
 			},
-			"fps":     input.FPS,
-			"bitrate": input.Bitrate,
+			"fps":      input.FPS,
+			"bitrate":  input.Bitrate,
+			"encoding": input.Encoding,
 		},
 		"results":             make(map[string]interface{}),
 		"configurationErrors": configurationErrors,
@@ -792,7 +766,7 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 		cameraMap[camera.ID] = camera
 	}
 	// Write CSV header with IP column and notes
-	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "notes"}
+	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "encoding_expected", "encoding_actual", "notes"}
 	if err := writer.Write(header); err != nil {
 		return "", fmt.Errorf("failed to write CSV header: %v", err)
 	}
@@ -843,7 +817,7 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 			}
 
 			// Write CSV row for configuration error
-			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
+			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
 			if err := writer.Write(row); err != nil {
 				return "", fmt.Errorf("failed to write CSV row for camera %s: %v", cameraID, err)
 			}
@@ -928,11 +902,23 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 					}
 				} // Determine final result and notes
 
-				if resolutionMatches && fpsMatches && bitrateMatches {
+				// Check encoding match
+				encodingMatches := true
+				if expectedEncoding, hasExpEncoding := validationMap["expectedEncoding"]; hasExpEncoding {
+					if actualEncoding, hasActEncoding := validationMap["actualEncoding"]; hasActEncoding {
+						if expEnc, ok1 := expectedEncoding.(string); ok1 && expEnc != "" {
+							if actEnc, ok2 := actualEncoding.(string); ok2 && actEnc != "" {
+								encodingMatches = strings.EqualFold(actEnc, expEnc)
+							}
+						}
+					}
+				}
+
+				if resolutionMatches && fpsMatches && bitrateMatches && encodingMatches {
 					result = "PASS"
 					notes.WriteString("All parameters match expected values")
 				} else if resolutionMatches {
-					// Resolution matches but FPS/bitrate doesn't = warning
+					// Resolution matches but FPS/bitrate/encoding doesn't = warning
 					result = "WARNING"
 					if !fpsMatches {
 						notes.WriteString("FPS mismatch")
@@ -942,6 +928,12 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 							notes.WriteString("; ")
 						}
 						notes.WriteString("Bitrate mismatch")
+					}
+					if !encodingMatches {
+						if notes.Len() > 0 {
+							notes.WriteString("; ")
+						}
+						notes.WriteString("Encoding mismatch")
 					}
 				} else {
 					// Resolution doesn't match = fail (this shouldn't happen if isValid=true, but just in case)
@@ -1005,8 +997,25 @@ func generateValidationCSV(validation map[string]interface{}, configErrors map[s
 				fpsActual = fmt.Sprintf("%.2f", fps)
 			}
 		}
+
+		// Format encoding expected
+		encodingExpected := ""
+		if expectedEncoding, exists := validationMap["expectedEncoding"]; exists {
+			if enc, ok := expectedEncoding.(string); ok {
+				encodingExpected = enc
+			}
+		}
+
+		// Format encoding actual
+		encodingActual := ""
+		if actualEncoding, exists := validationMap["actualEncoding"]; exists {
+			if enc, ok := actualEncoding.(string); ok {
+				encodingActual = enc
+			}
+		}
+
 		// Write CSV row with IP column and notes
-		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, notes.String()}
+		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, encodingExpected, encodingActual, notes.String()}
 		if err := writer.Write(row); err != nil {
 			return "", fmt.Errorf("failed to write CSV row for camera %s: %v", cameraID, err)
 		}

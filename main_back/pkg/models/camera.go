@@ -15,6 +15,7 @@ type EncoderConfig struct {
 	Quality    int
 	FPS        int
 	Bitrate    int
+	Encoding   string
 }
 
 type EncoderOption struct {

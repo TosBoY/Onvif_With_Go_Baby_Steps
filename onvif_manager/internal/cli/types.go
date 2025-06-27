@@ -43,10 +43,11 @@ type InvalidRowInfo struct {
 
 // ConfigData represents configuration data imported from CSV
 type ConfigData struct {
-	Width   int `json:"width"`
-	Height  int `json:"height"`
-	FPS     int `json:"fps"`
-	Bitrate int `json:"bitrate"`
+	Width    int    `json:"width"`
+	Height   int    `json:"height"`
+	FPS      int    `json:"fps"`
+	Bitrate  int    `json:"bitrate"`
+	Encoding string `json:"encoding"`
 }
 
 // SavedConfig represents the persistent configuration stored in saved_config.json
@@ -55,6 +56,7 @@ type SavedConfig struct {
 	Height      int    `json:"height"`
 	FPS         int    `json:"fps"`
 	Bitrate     int    `json:"bitrate"`
+	Encoding    string `json:"encoding"`
 	LastUpdated string `json:"lastUpdated"`
 	Source      string `json:"source"` // "csv", "manual", "default"
 }
@@ -62,10 +64,11 @@ type SavedConfig struct {
 // ToConfigData converts SavedConfig to ConfigData for applying to cameras
 func (sc *SavedConfig) ToConfigData() *ConfigData {
 	return &ConfigData{
-		Width:   sc.Width,
-		Height:  sc.Height,
-		FPS:     sc.FPS,
-		Bitrate: sc.Bitrate,
+		Width:    sc.Width,
+		Height:   sc.Height,
+		FPS:      sc.FPS,
+		Bitrate:  sc.Bitrate,
+		Encoding: sc.Encoding,
 	}
 }
 

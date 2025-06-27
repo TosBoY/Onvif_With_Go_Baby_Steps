@@ -209,24 +209,27 @@ func (s *StreamInfo) Is4K() bool {
 }
 
 type ValidationResult struct {
-	IsValid         bool    `json:"isValid"`
-	ExpectedWidth   int     `json:"expectedWidth"`
-	ExpectedHeight  int     `json:"expectedHeight"`
-	ExpectedFPS     int     `json:"expectedFPS"`
-	ExpectedBitrate int     `json:"expectedBitrate"`
-	ActualWidth     int     `json:"actualWidth"`
-	ActualHeight    int     `json:"actualHeight"`
-	ActualFPS       float64 `json:"actualFPS"`
-	ActualBitrate   int     `json:"actualBitrate"`
-	Error           string  `json:"error,omitempty"`
+	IsValid          bool    `json:"isValid"`
+	ExpectedWidth    int     `json:"expectedWidth"`
+	ExpectedHeight   int     `json:"expectedHeight"`
+	ExpectedFPS      int     `json:"expectedFPS"`
+	ExpectedBitrate  int     `json:"expectedBitrate"`
+	ExpectedEncoding string  `json:"expectedEncoding,omitempty"`
+	ActualWidth      int     `json:"actualWidth"`
+	ActualHeight     int     `json:"actualHeight"`
+	ActualFPS        float64 `json:"actualFPS"`
+	ActualBitrate    int     `json:"actualBitrate"`
+	ActualEncoding   string  `json:"actualEncoding,omitempty"`
+	Error            string  `json:"error,omitempty"`
 }
 
-func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, expectedBitrate int) (*ValidationResult, error) {
+func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, expectedBitrate int, expectedEncoding string) (*ValidationResult, error) {
 	result := &ValidationResult{
-		ExpectedWidth:   expectedWidth,
-		ExpectedHeight:  expectedHeight,
-		ExpectedFPS:     expectedFPS,
-		ExpectedBitrate: expectedBitrate,
+		ExpectedWidth:    expectedWidth,
+		ExpectedHeight:   expectedHeight,
+		ExpectedFPS:      expectedFPS,
+		ExpectedBitrate:  expectedBitrate,
+		ExpectedEncoding: expectedEncoding,
 	}
 
 	streamInfo, err := AnalyzeRTSPStream(rtspURL)
@@ -238,17 +241,25 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, 
 	result.ActualHeight = streamInfo.Height
 	result.ActualFPS = streamInfo.FPS
 	result.ActualBitrate = streamInfo.Bitrate
+	result.ActualEncoding = streamInfo.Codec
 
 	if !streamInfo.Success {
 		result.Error = streamInfo.ErrorMsg
 		return result, nil
 	}
 	// Perform validation logic with new business rules:
-	// Resolution mismatch = failure, FPS/bitrate mismatch = warning only
+	// Resolution mismatch = failure, FPS/bitrate/encoding mismatch = warning only
 	resolutionMatch := result.ActualWidth > 0 && result.ActualHeight > 0 &&
 		result.ActualWidth == result.ExpectedWidth && result.ActualHeight == result.ExpectedHeight
 	// Only consider FPS match if we have a valid FPS value
 	fpsMatch := result.ActualFPS > 0 && int(result.ActualFPS+0.5) == result.ExpectedFPS
+
+	// Check for encoding match if expected encoding was provided
+	encodingMatch := true // Default to true if no expected encoding
+	if result.ExpectedEncoding != "" && result.ActualEncoding != "" {
+		// Case insensitive check for codec/encoding match
+		encodingMatch = strings.EqualFold(result.ActualEncoding, result.ExpectedEncoding)
+	}
 
 	// Only consider bitrate match if expected bitrate was provided and we have actual bitrate
 	bitrateMatch := true // Default to true if no expected bitrate
@@ -267,10 +278,10 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, 
 	}
 
 	// NEW BUSINESS LOGIC: Only resolution mismatch causes failure
-	// FPS and bitrate mismatches are warnings only
+	// FPS, bitrate, and encoding mismatches are warnings only
 	result.IsValid = resolutionMatch // Only require resolution to match for success
 	// Generate error/warning messages with clear distinction
-	if !result.IsValid || !fpsMatch || !bitrateMatch {
+	if !result.IsValid || !fpsMatch || !bitrateMatch || !encodingMatch {
 		var errors []string
 
 		// Resolution mismatch = ERROR (causes failure)
@@ -290,6 +301,16 @@ func ValidateStream(rtspURL string, expectedWidth, expectedHeight, expectedFPS, 
 					result.ActualFPS, result.ExpectedFPS))
 			} else {
 				errors = append(errors, "FPS DETECTION FAILED (WARNING): unable to detect actual FPS")
+			}
+		}
+
+		// Encoding mismatch = WARNING (does not cause failure)
+		if !encodingMatch && result.ExpectedEncoding != "" {
+			if result.ActualEncoding != "" {
+				errors = append(errors, fmt.Sprintf("ENCODING DIFFERENCE (WARNING): got %s, expected %s",
+					result.ActualEncoding, result.ExpectedEncoding))
+			} else {
+				errors = append(errors, "ENCODING DETECTION FAILED (WARNING): unable to detect actual encoding")
 			}
 		}
 

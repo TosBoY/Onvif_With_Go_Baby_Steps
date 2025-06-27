@@ -101,9 +101,10 @@ func GetCurrentConfig(client *CameraClient, configToken string) (models.EncoderC
 				Width:  1920,
 				Height: 1080,
 			},
-			Quality: 6,
-			FPS:     25,
-			Bitrate: 4096,
+			Quality:  6,
+			FPS:      25,
+			Bitrate:  4096,
+			Encoding: "H264",
 		}, nil
 	}
 
@@ -121,9 +122,10 @@ func GetCurrentConfig(client *CameraClient, configToken string) (models.EncoderC
 			Width:  int(cfg.Resolution.Width),
 			Height: int(cfg.Resolution.Height),
 		},
-		Quality: int(cfg.Quality),
-		FPS:     int(cfg.RateControl.FrameRateLimit),
-		Bitrate: int(cfg.RateControl.BitrateLimit),
+		Quality:  int(cfg.Quality),
+		FPS:      int(cfg.RateControl.FrameRateLimit),
+		Bitrate:  int(cfg.RateControl.BitrateLimit),
+		Encoding: string(cfg.Encoding),
 	}, nil
 }
 
@@ -135,11 +137,41 @@ func SetEncoderConfig(client *CameraClient, configToken string, config models.En
 	}
 
 	// For real cameras, proceed with actual ONVIF calls
-	resp, _ := client.Media.GetVideoEncoderConfiguration(&media.GetVideoEncoderConfiguration{
+	resp, err := client.Media.GetVideoEncoderConfiguration(&media.GetVideoEncoderConfiguration{
 		ConfigurationToken: media.ReferenceToken(configToken),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to get video encoder config: %w", err)
+	}
 
+	// Get the current configuration to work with
 	cfg := resp.Configuration
+
+	// Test if encoding change is supported first (if an encoding was specified)
+	encodingSupported := true
+	if input.Encoding != "" {
+		// Only test encoding change if input encoding differs from current
+		if string(cfg.Encoding) != input.Encoding {
+			// Create a copy for testing encoding only
+			cfgTest := resp.Configuration
+			cfgTest.Encoding = media.VideoEncoding(input.Encoding)
+
+			reqTest := &media.SetVideoEncoderConfiguration{
+				Configuration:    cfgTest,
+				ForcePersistence: true,
+			}
+
+			_, encErr := client.Media.SetVideoEncoderConfiguration(reqTest)
+			if encErr != nil {
+				fmt.Printf("Camera does not support %s encoding: %v\n", input.Encoding, encErr)
+				encodingSupported = false
+			} else {
+				fmt.Printf("Camera supports %s encoding\n", input.Encoding)
+			}
+		}
+	}
+
+	// Now apply the full configuration
 
 	// Use existing values if input values are not provided (0)
 	if input.Quality == 0 {
@@ -165,18 +197,25 @@ func SetEncoderConfig(client *CameraClient, configToken string, config models.En
 		}
 	}
 
+	// Only change encoding if the test was successful
+	if encodingSupported && input.Encoding != "" {
+		cfg.Encoding = media.VideoEncoding(input.Encoding)
+	}
+
+	// Apply the rest of the configuration changes
 	cfg.Resolution.Width = int32(input.Resolution.Width)
 	cfg.Resolution.Height = int32(input.Resolution.Height)
 	cfg.RateControl.FrameRateLimit = int32(input.FPS)
 	cfg.Quality = float32(input.Quality)
 	cfg.RateControl.BitrateLimit = int32(input.Bitrate)
 
+	// Apply the configuration
 	req := &media.SetVideoEncoderConfiguration{
 		Configuration:    cfg,
 		ForcePersistence: true,
 	}
 
-	_, err := client.Media.SetVideoEncoderConfiguration(req)
+	_, err = client.Media.SetVideoEncoderConfiguration(req)
 	if err != nil {
 		return fmt.Errorf("failed to set video encoder config: %w", err)
 	}

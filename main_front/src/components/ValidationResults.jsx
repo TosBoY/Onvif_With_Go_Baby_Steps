@@ -105,6 +105,23 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
     return true; // Don't flag as mismatch if we can't measure it
   };
   
+  // Function to check if encoding matches (if expected encoding was provided)
+  const encodingMatches = (v) => {
+    // If this is a fake camera, consider it matching if isValid is true
+    if (v.isFake && v.isValid) return true;
+    
+    // If no expected encoding was provided, consider it matching
+    if (!v.expectedEncoding) return true;
+    
+    // If actual encoding is available, do case-insensitive comparison
+    if (v.actualEncoding) {
+      return v.actualEncoding.toLowerCase().includes(v.expectedEncoding.toLowerCase());
+    }
+    
+    // If actual encoding is not available, we can't determine matching
+    return true; // Don't flag as mismatch if we can't measure it
+  };
+  
   // Separate successful and failed validations
   const successfulValidations = validations.filter(v => v.isValid);
   const failedValidations = validations.filter(v => !v.isValid);
@@ -112,8 +129,8 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
   // For multi-camera view, separate by type of issue
   const resolutionFailures = failedValidations.filter(v => !resolutionMatches(v));
   const warningValidations = validations.filter(v => {
-    // Include cameras that are valid but have FPS/bitrate mismatches
-    if (v.isValid && (!fpsMatches(v) || !bitrateMatches(v))) {
+    // Include cameras that are valid but have FPS/bitrate/encoding mismatches
+    if (v.isValid && (!fpsMatches(v) || !bitrateMatches(v) || !encodingMatches(v))) {
       return true;
     }
     return false;
@@ -131,36 +148,36 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
     const resolutionMismatch = !resolutionMatches(validation);
     const fpsMismatch = !fpsMatches(validation);
     const bitrateMismatch = !bitrateMatches(validation);
+    const encodingMismatch = !encodingMatches(validation);
     
     // Determine severity based on new business rules
-    // Resolution mismatch = error, FPS/bitrate mismatch = warning
-    const hasFpsOrBitrateWarnings = (fpsMismatch || bitrateMismatch) && validation.isValid;
-    const alertSeverity = !validation.isValid ? 'error' : hasFpsOrBitrateWarnings ? 'warning' : 'success';
+    // Resolution mismatch = error, FPS/bitrate/encoding mismatch = warning
+    const hasWarnings = (fpsMismatch || bitrateMismatch || encodingMismatch) && validation.isValid;
+    const alertSeverity = !validation.isValid ? 'error' : hasWarnings ? 'warning' : 'success';
 
     return (
       <Box sx={{ mb: 3 }}>        <Alert 
           severity={alertSeverity}
           icon={validation.isValid ? 
-            (hasFpsOrBitrateWarnings ? <ErrorIcon color="warning" sx={{ mr: 1 }} /> : getStatusIcon(true)) : 
+            (hasWarnings ? <ErrorIcon color="warning" sx={{ mr: 1 }} /> : getStatusIcon(true)) : 
             <ErrorIcon color="error" sx={{ mr: 1 }} />}
           sx={{ mb: 2 }}
         >
           <Box>
-            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>
-              {!validation.isValid ? 'Validation Failed' : 
-               hasFpsOrBitrateWarnings ? 'Configuration Applied with Warnings' : 
+            <Typography variant="body1" sx={{ fontWeight: 'bold' }}>                {!validation.isValid ? 'Validation Failed' : 
+               hasWarnings ? 'Configuration Applied with Warnings' : 
                'Validation Successful'}
             </Typography>
             {validation.error && (
               <Typography variant="body2" sx={{ mt: 0.5 }}>
                 {!validation.isValid ? 
                  'Resolution mismatch detected - configuration failed.' :
-                 'FPS or bitrate differences detected but within acceptable limits.'}
+                 'FPS, bitrate or encoding differences detected but within acceptable limits.'}
               </Typography>
             )}
           </Box>
         </Alert>        
-        {(!validation.isValid || hasFpsOrBitrateWarnings) && (
+        {(!validation.isValid || hasWarnings) && (
           <Card variant="outlined" sx={{ mb: 2 }}>
             <CardContent sx={{ pb: '16px !important' }}>              <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
                 {!validation.isValid ? 'Configuration Failed - Details' : 'Configuration Warnings - Details'}
@@ -251,10 +268,36 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
                   </Grid>
                 </Box>
               )}
+              
+              {encodingMismatch && validation.expectedEncoding && (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 'medium' }}>
+                    Encoding Difference:
+                  </Typography>
+                  <Grid container spacing={2} sx={{ mt: 0.5 }}>
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Expected:
+                      </Typography>
+                      <Typography variant="body1">
+                        {validation.expectedEncoding || 'Auto'}
+                      </Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <Typography variant="body2" color="text.secondary">
+                        Actual:
+                      </Typography>
+                      <Typography variant="body1">
+                        {validation.actualEncoding || 'Unknown'}
+                      </Typography>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
             </CardContent>
           </Card>
         )}
-          {validation.isValid && !hasFpsOrBitrateWarnings && (
+          {validation.isValid && !hasWarnings && (
           <Alert severity="success" sx={{ mb: 2 }}>
             <Typography variant="body2">
               All parameters match exactly as expected. Camera is configured perfectly.

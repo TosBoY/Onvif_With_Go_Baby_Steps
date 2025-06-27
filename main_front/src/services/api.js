@@ -37,13 +37,13 @@ export const getCameras = async () => {
   }
 };
 
-export const applyConfig = async (cameraIds, width, height, fps, bitrate) => {
+export const applyConfig = async (cameraIds, width, height, fps, bitrate, encoding) => {
   try {
     // Handle both single camera ID (string) and multiple camera IDs (array)
     const isBatchMode = Array.isArray(cameraIds);
     const payload = isBatchMode 
-      ? { cameraIds, width, height, fps, bitrate }
-      : { cameraId: cameraIds, width, height, fps, bitrate };
+      ? { cameraIds, width, height, fps, bitrate, encoding }
+      : { cameraId: cameraIds, width, height, fps, bitrate, encoding };
       
     console.log('Applying config:', payload);
     const response = await api.post('/apply-config', payload);
@@ -60,15 +60,31 @@ export const applyConfig = async (cameraIds, width, height, fps, bitrate) => {
   }
 };
 
-export const launchVLC = async (cameraId) => {
+// Get camera detailed information
+export const getCameraInfo = async (cameraId) => {
   try {
-    console.log('Launching VLC for camera:', cameraId);
-    const response = await api.post('/vlc', {
-      cameraId
-    });
+    console.log(`Getting camera info for ID: ${cameraId}`);
+    const response = await api.get(`/cameras/${cameraId}/info`);
     return response.data;
   } catch (error) {
-    console.error('Error launching VLC:', error);
+    console.error(`Error getting camera info for ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+export const launchVLC = async (cameraId) => {
+  try {
+    console.log(`Launching VLC for camera ID: ${cameraId}`);
+    const response = await api.post('/vlc', { cameraId });
+    return response.data;
+  } catch (error) {
+    console.error(`Error launching VLC for ${cameraId}:`, error);
     if (error.response) {
       throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
     } else if (error.request) {
@@ -197,6 +213,102 @@ export const importConfigCSV = async (file) => {
     console.error('Error importing config CSV:', error);
     if (error.response) {
       throw new Error(error.response.data.error || `Server error: ${error.response.status}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Check all cameras status from CSV
+export const checkAllCameras = async () => {
+  try {
+    console.log('Checking all cameras from CSV');
+    const response = await api.get('/check-all-cams');
+    return response.data;
+  } catch (error) {
+    console.error('Error checking all cameras:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Load camera list from CSV
+export const loadCameraList = async () => {
+  try {
+    console.log('Loading camera list from CSV');
+    const response = await api.get('/load-cam-list');
+    return response.data;
+  } catch (error) {
+    console.error('Error loading camera list:', error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Check single camera status and configuration
+export const checkSingleCamera = async (cameraId) => {
+  try {
+    console.log(`Checking single camera ID: ${cameraId}`);
+    const response = await api.get(`/check-single-cam/${cameraId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error checking camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Configure single camera
+export const configureSingleCamera = async (cameraId, width, height, fps, bitrate, encoding) => {
+  try {
+    console.log(`Configuring single camera ID: ${cameraId}`, { width, height, fps, bitrate, encoding });
+    const response = await api.post(`/config-single-cam/${cameraId}`, {
+      width,
+      height,
+      fps,
+      bitrate,
+      encoding
+    });
+    return response.data;
+  } catch (error) {
+    console.error(`Error configuring camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
+    } else if (error.request) {
+      throw new Error('Network error: No response from server');
+    } else {
+      throw new Error(`Request error: ${error.message}`);
+    }
+  }
+};
+
+// Validate single camera using RTSP stream analysis
+export const validateSingleCamera = async (cameraId) => {
+  try {
+    console.log(`Validating single camera ID: ${cameraId}`);
+    const response = await api.get(`/validate-cam/${cameraId}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error validating camera ${cameraId}:`, error);
+    if (error.response) {
+      throw new Error(`Server error: ${error.response.status} ${error.response.statusText}`);
     } else if (error.request) {
       throw new Error('Network error: No response from server');
     } else {

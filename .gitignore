@@ -70,6 +70,8 @@ onvif_front/yarn-error.log*
 # === Tests and Backups ===
 info/backup/
 tests/
+tests/**
+tests/test/**
 
 # === CSV Result Files ===
 validation_results_*.csv

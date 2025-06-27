@@ -537,7 +537,7 @@ func (cs *CameraService) processConfigData(records [][]string) (*ConfigData, err
 		columnIndices[columnName] = i
 	}
 
-	// Required columns (bitrate is optional)
+	// Required columns (bitrate and encoding are optional)
 	requiredColumns := []string{"width", "height", "fps"}
 	for _, reqCol := range requiredColumns {
 		if _, exists := columnIndices[reqCol]; !exists {
@@ -550,7 +550,8 @@ func (cs *CameraService) processConfigData(records [][]string) (*ConfigData, err
 
 	// Parse configuration values
 	configData := &ConfigData{
-		Bitrate: 0, // Default value for optional bitrate
+		Bitrate:  0,  // Default value for optional bitrate
+		Encoding: "", // Default value for optional encoding
 	}
 
 	// Extract Width (required)
@@ -611,6 +612,25 @@ func (cs *CameraService) processConfigData(records [][]string) (*ConfigData, err
 		}
 	}
 
+	// Extract Encoding (optional)
+	if encodingIndex, exists := columnIndices["encoding"]; exists && encodingIndex < len(dataRow) {
+		encodingStr := strings.TrimSpace(dataRow[encodingIndex])
+		if encodingStr != "" {
+			// Normalize encoding string to common formats
+			encodingStr = strings.ToUpper(encodingStr)
+			if encodingStr == "H264" || encodingStr == "H.264" {
+				configData.Encoding = "H264"
+			} else if encodingStr == "H265" || encodingStr == "H.265" || encodingStr == "HEVC" {
+				configData.Encoding = "H265"
+			} else if encodingStr == "MJPEG" || encodingStr == "JPEG" {
+				configData.Encoding = "MJPEG"
+			} else {
+				log.Printf("Warning: Unknown encoding value '%s', using as-is", encodingStr)
+				configData.Encoding = encodingStr
+			}
+		}
+	}
+
 	return configData, nil
 }
 
@@ -638,8 +658,9 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 				"width":  config.Width,
 				"height": config.Height,
 			},
-			"fps":     config.FPS,
-			"bitrate": config.Bitrate,
+			"fps":      config.FPS,
+			"bitrate":  config.Bitrate,
+			"encoding": config.Encoding,
 		}
 		return result
 	}
@@ -712,11 +733,12 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 	currentMatches := currentConfig.Resolution.Width == closestResolution.Width &&
 		currentConfig.Resolution.Height == closestResolution.Height &&
 		currentConfig.FPS == config.FPS &&
-		(config.Bitrate == 0 || currentConfig.Bitrate == config.Bitrate)
+		(config.Bitrate == 0 || currentConfig.Bitrate == config.Bitrate) &&
+		(config.Encoding == "" || currentConfig.Encoding == config.Encoding)
 
 	if currentMatches {
-		log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d, Bitrate: %d), skipping config change",
-			cameraID, closestResolution.Width, closestResolution.Height, config.FPS, currentConfig.Bitrate)
+		log.Printf("Camera %s already has the requested configuration (Resolution: %dx%d, FPS: %d, Bitrate: %d, Encoding: %s), skipping config change",
+			cameraID, closestResolution.Width, closestResolution.Height, config.FPS, currentConfig.Bitrate, currentConfig.Encoding)
 		// Mark as successful but indicate no change was needed
 		result.Success = true
 		result.AppliedConfig = map[string]interface{}{
@@ -726,6 +748,7 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 			},
 			"fps":       config.FPS,
 			"bitrate":   currentConfig.Bitrate,
+			"encoding":  currentConfig.Encoding,
 			"unchanged": true, // Indicate no change was needed
 		}
 		result.ResolutionAdjusted = config.Width != closestResolution.Width || config.Height != closestResolution.Height
@@ -758,6 +781,7 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 		Quality:    currentConfig.Quality, // Keep the current quality
 		FPS:        config.FPS,
 		Bitrate:    config.Bitrate,
+		Encoding:   config.Encoding,
 	}
 	log.Printf("Prepared new config for camera %s: %+v", cameraID, newConfig)
 
@@ -796,8 +820,9 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 			"width":  closestResolution.Width,
 			"height": closestResolution.Height,
 		},
-		"fps":     config.FPS,
-		"bitrate": config.Bitrate,
+		"fps":      config.FPS,
+		"bitrate":  config.Bitrate,
+		"encoding": config.Encoding,
 	}
 	result.ResolutionAdjusted = config.Width != closestResolution.Width || config.Height != closestResolution.Height
 	result.StreamURL = fullStreamURL
@@ -806,7 +831,7 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 }
 
 func (cs *CameraService) validateCameraStream(streamURL string, config *ConfigData) *ValidationResult {
-	validationResult, err := ffmpeg.ValidateStream(streamURL, config.Width, config.Height, config.FPS, config.Bitrate)
+	validationResult, err := ffmpeg.ValidateStream(streamURL, config.Width, config.Height, config.FPS, config.Bitrate, config.Encoding)
 	if err != nil {
 		return &ValidationResult{
 			IsValid:         false,

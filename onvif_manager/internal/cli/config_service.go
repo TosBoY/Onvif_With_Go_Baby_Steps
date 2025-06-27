@@ -11,6 +11,7 @@ var inMemoryConfig = SavedConfig{
 	Height:      1080,
 	FPS:         25,
 	Bitrate:     4096,
+	Encoding:    "H264",
 	Source:      "default",
 	LastUpdated: time.Now().Format("2006-01-02 15:04:05"),
 }
@@ -43,6 +44,7 @@ func (cs *ConfigService) ImportFromConfigData(configData *ConfigData, source str
 		Height:      configData.Height,
 		FPS:         configData.FPS,
 		Bitrate:     configData.Bitrate,
+		Encoding:    configData.Encoding,
 		Source:      source,
 		LastUpdated: time.Now().Format("2006-01-02 15:04:05"),
 	}
@@ -50,13 +52,14 @@ func (cs *ConfigService) ImportFromConfigData(configData *ConfigData, source str
 }
 
 // UpdateManually updates the saved config with manual values
-func (cs *ConfigService) UpdateManually(width, height, fps, bitrate int) error {
+func (cs *ConfigService) UpdateManually(width, height, fps, bitrate int, encoding string) error {
 	savedConfig := &SavedConfig{
-		Width:   width,
-		Height:  height,
-		FPS:     fps,
-		Bitrate: bitrate,
-		Source:  "manual",
+		Width:    width,
+		Height:   height,
+		FPS:      fps,
+		Bitrate:  bitrate,
+		Encoding: encoding,
+		Source:   "manual",
 	}
 
 	return cs.SaveConfig(savedConfig)
@@ -70,7 +73,7 @@ func (cs *ConfigService) GetDefaultConfig() *SavedConfig {
 }
 
 // ValidateConfig validates configuration values
-func (cs *ConfigService) ValidateConfig(width, height, fps, bitrate int) error {
+func (cs *ConfigService) ValidateConfig(width, height, fps, bitrate int, encoding string) error {
 	if width <= 0 {
 		return fmt.Errorf("width must be greater than 0")
 	}
@@ -82,6 +85,21 @@ func (cs *ConfigService) ValidateConfig(width, height, fps, bitrate int) error {
 	}
 	if bitrate < 0 {
 		return fmt.Errorf("bitrate must be 0 or greater")
+	}
+
+	// Validate encoding if provided
+	if encoding != "" {
+		validEncodings := []string{"H264", "H265", "MJPEG", "HEVC"}
+		isValidEncoding := false
+		for _, validEnc := range validEncodings {
+			if encoding == validEnc {
+				isValidEncoding = true
+				break
+			}
+		}
+		if !isValidEncoding {
+			return fmt.Errorf("encoding '%s' is not supported. Valid options: H264, H265, HEVC, MJPEG", encoding)
+		}
 	}
 
 	// Additional reasonable limits

@@ -413,6 +413,7 @@ func runShowConfig() error {
 	fmt.Printf("   • Resolution: %dx%d\n", config.Width, config.Height)
 	fmt.Printf("   • Frame Rate: %d FPS\n", config.FPS)
 	fmt.Printf("   • Bitrate: %d kbps\n", config.Bitrate)
+	fmt.Printf("   • Encoding: %s\n", config.Encoding)
 	fmt.Printf("   • Last Updated: %s\n", config.LastUpdated)
 	fmt.Printf("   • Source: %s\n", config.Source)
 
@@ -421,6 +422,11 @@ func runShowConfig() error {
 
 // runSetConfig sets the saved configuration manually
 func runSetConfig(widthStr, heightStr, fpsStr, bitrateStr string) error {
+	return runSetConfigWithEncoding(widthStr, heightStr, fpsStr, bitrateStr, "H264")
+}
+
+// runSetConfigWithEncoding sets the saved configuration manually with encoding
+func runSetConfigWithEncoding(widthStr, heightStr, fpsStr, bitrateStr, encoding string) error {
 	width, err := strconv.Atoi(widthStr)
 	if err != nil {
 		return fmt.Errorf("invalid width value: %w", err)
@@ -441,12 +447,17 @@ func runSetConfig(widthStr, heightStr, fpsStr, bitrateStr string) error {
 		return fmt.Errorf("invalid bitrate value: %w", err)
 	}
 
+	// Use default encoding if empty
+	if encoding == "" {
+		encoding = "H264"
+	}
+
 	configService := NewConfigService()
-	if err := configService.ValidateConfig(width, height, fps, bitrate); err != nil {
+	if err := configService.ValidateConfig(width, height, fps, bitrate, encoding); err != nil {
 		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	err = configService.UpdateManually(width, height, fps, bitrate)
+	err = configService.UpdateManually(width, height, fps, bitrate, encoding)
 	if err != nil {
 		return fmt.Errorf("failed to save configuration: %w", err)
 	}
@@ -454,6 +465,7 @@ func runSetConfig(widthStr, heightStr, fpsStr, bitrateStr string) error {
 	fmt.Printf("   • Resolution: %dx%d\n", width, height)
 	fmt.Printf("   • Frame Rate: %d FPS\n", fps)
 	fmt.Printf("   • Bitrate: %d kbps\n", bitrate)
+	fmt.Printf("   • Encoding: %s\n", encoding)
 	return nil
 }
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -26,7 +26,9 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
-  Select
+  Select,
+  Pagination,
+  Stack
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -48,6 +50,11 @@ const CameraStatus = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [checking, setChecking] = useState({});
   const [validating, setValidating] = useState({});
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageJumpValue, setPageJumpValue] = useState('');
+  const camerasPerPage = 50;
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   
@@ -74,6 +81,10 @@ const CameraStatus = () => {
       // Load camera list from CSV
       const result = await loadCameraList();
       setCameras(result.cameras || []);
+      
+      // Reset pagination to first page
+      setCurrentPage(1);
+      setPageJumpValue('');
       
       // Initialize camera statuses as unknown
       const initialStatuses = {};
@@ -162,18 +173,33 @@ const CameraStatus = () => {
   };
 
   // Check all cameras
-  const checkAllCameras = async () => {
+  const checkAllCameras = useCallback(async () => {
     setRefreshing(true);
     try {
+      // Check all cameras, not just the ones on current page
       const checkPromises = cameras.map(camera => checkCamera(camera.cameraId));
       await Promise.all(checkPromises);
-      showSnackbar('All cameras checked', 'success');
+      showSnackbar(`All ${cameras.length} cameras checked`, 'success');
     } catch (err) {
       showSnackbar('Some cameras failed to check', 'warning');
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [cameras]);
+
+  // Check cameras on current page only
+  const checkCurrentPageCameras = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const checkPromises = paginatedCameras.map(camera => checkCamera(camera.cameraId));
+      await Promise.all(checkPromises);
+      showSnackbar(`Page ${currentPage} cameras checked (${paginatedCameras.length} cameras)`, 'success');
+    } catch (err) {
+      showSnackbar('Some cameras on this page failed to check', 'warning');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [paginatedCameras, currentPage]);
 
   // Refresh camera list from CSV
   const handleRefreshList = async () => {
@@ -296,6 +322,89 @@ const CameraStatus = () => {
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
+
+  // Optimized pagination helpers with memoization
+  const { totalPages, startIndex, endIndex, paginatedCameras } = useMemo(() => {
+    const total = Math.ceil(cameras.length / camerasPerPage);
+    const start = (currentPage - 1) * camerasPerPage;
+    const end = start + camerasPerPage;
+    const paginated = cameras.slice(start, end);
+    
+    return {
+      totalPages: total,
+      startIndex: start,
+      endIndex: end,
+      paginatedCameras: paginated
+    };
+  }, [cameras, currentPage, camerasPerPage]);
+
+  const handlePageChange = useCallback((event, value) => {
+    setCurrentPage(value);
+    setPageJumpValue(''); // Clear jump input when page changes
+  }, []);
+
+  const handlePageJump = useCallback((event) => {
+    if (event.key === 'Enter') {
+      const pageNum = parseInt(pageJumpValue);
+      if (pageNum >= 1 && pageNum <= totalPages) {
+        setCurrentPage(pageNum);
+        setPageJumpValue('');
+      }
+    }
+  }, [pageJumpValue, totalPages]);
+
+  const handlePageJumpChange = useCallback((event) => {
+    const value = event.target.value;
+    if (value === '' || /^\d+$/.test(value)) {
+      setPageJumpValue(value);
+    }
+  }, []);
+
+  // Create a reusable pagination component with quick page jump
+  const PaginationComponent = useMemo(() => {
+    if (totalPages <= 1) return null;
+    
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', my: 2, gap: 2 }}>
+        <Stack spacing={1} alignItems="center">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Pagination
+              count={totalPages}
+              page={currentPage}
+              onChange={handlePageChange}
+              color="primary"
+              size="large"
+              showFirstButton
+              showLastButton
+              siblingCount={1}
+              boundaryCount={1}
+            />
+            {totalPages > 5 && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Go to:
+                </Typography>
+                <TextField
+                  size="small"
+                  value={pageJumpValue}
+                  onChange={handlePageJumpChange}
+                  onKeyPress={handlePageJump}
+                  placeholder={`1-${totalPages}`}
+                  sx={{ width: 80 }}
+                  inputProps={{
+                    style: { textAlign: 'center' }
+                  }}
+                />
+              </Box>
+            )}
+          </Box>
+          <Typography variant="body2" color="text.secondary" textAlign="center">
+            Showing {startIndex + 1}-{Math.min(endIndex, cameras.length)} of {cameras.length} cameras
+          </Typography>
+        </Stack>
+      </Box>
+    );
+  }, [totalPages, currentPage, handlePageChange, startIndex, endIndex, cameras.length, pageJumpValue, handlePageJumpChange, handlePageJump]);
 
   const getStatusChip = (cameraId) => {
     const status = cameraStatuses[cameraId];
@@ -511,12 +620,21 @@ const CameraStatus = () => {
               >
                 {refreshing ? 'Loading...' : 'Refresh List'}
               </Button>
+              {cameras.length > camerasPerPage && (
+                <Button
+                  variant="outlined"
+                  onClick={checkCurrentPageCameras}
+                  disabled={paginatedCameras.length === 0 || refreshing}
+                >
+                  Check Page {currentPage}
+                </Button>
+              )}
               <Button
                 variant="contained"
                 onClick={checkAllCameras}
-                disabled={cameras.length === 0}
+                disabled={cameras.length === 0 || refreshing}
               >
-                Check All Cameras
+                Check All ({cameras.length})
               </Button>
             </Box>
           </Box>
@@ -524,12 +642,18 @@ const CameraStatus = () => {
             Load cameras from CSV file and check their status individually
           </Typography>
           
-          {/* Camera Count */}
+          {/* Camera Count and Pagination Info */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary">
               {cameras.length} cameras loaded from CSV
+              {cameras.length > camerasPerPage && (
+                <span> | Page {currentPage} of {totalPages} | Showing {startIndex + 1}-{Math.min(endIndex, cameras.length)} of {cameras.length}</span>
+              )}
             </Typography>
           </Box>
+
+          {/* Top Pagination */}
+          {PaginationComponent}
         </CardContent>
       </Card>
 
@@ -538,125 +662,130 @@ const CameraStatus = () => {
           No cameras found. Add some cameras first to monitor their status.
         </Alert>
       ) : (
-        <TableContainer component={Paper}>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Camera ID</TableCell>
-                <TableCell>IP Address</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Resolution</TableCell>
-                <TableCell>Encoding</TableCell>
-                <TableCell>FPS</TableCell>
-                <TableCell>Bitrate</TableCell>
-                <TableCell>Validation</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell align="center">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {cameras.map((camera) => {
-                const status = cameraStatuses[camera.cameraId];
-                const hasError = status?.status === 'offline' || status?.status === 'error';
-                const isChecking = checking[camera.cameraId];
-                
-                return (
-                  <TableRow key={camera.cameraId} hover>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight="bold">
-                        {camera.cameraId}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {camera.ip}:{camera.port}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        {getStatusChip(camera.cameraId)}
-                        {hasError && status?.error && (
-                          <Tooltip title={getErrorTooltip(camera.cameraId)} arrow>
-                            <InfoIcon color="error" fontSize="small" />
+        <Box>
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Camera ID</TableCell>
+                  <TableCell>IP Address</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Resolution</TableCell>
+                  <TableCell>Encoding</TableCell>
+                  <TableCell>FPS</TableCell>
+                  <TableCell>Bitrate</TableCell>
+                  <TableCell>Validation</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell align="center">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paginatedCameras.map((camera) => {
+                  const status = cameraStatuses[camera.cameraId];
+                  const hasError = status?.status === 'offline' || status?.status === 'error';
+                  const isChecking = checking[camera.cameraId];
+                  
+                  return (
+                    <TableRow key={camera.cameraId} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight="bold">
+                          {camera.cameraId}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {camera.ip}:{camera.port}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          {getStatusChip(camera.cameraId)}
+                          {hasError && status?.error && (
+                            <Tooltip title={getErrorTooltip(camera.cameraId)} arrow>
+                              <InfoIcon color="error" fontSize="small" />
+                            </Tooltip>
+                          )}
+                          {status?.lastChecked && (
+                            <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                              Last checked: {status.lastChecked}
+                            </Typography>
+                          )}
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getResolution(camera.cameraId)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getEncoding(camera.cameraId)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getFPS(camera.cameraId)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getBitrate(camera.cameraId)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {getValidationChip(camera.cameraId)}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={camera.isFake ? 'Simulated' : 'Real'}
+                          color={camera.isFake ? 'warning' : 'primary'}
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box display="flex" gap={1}>
+                          <Tooltip title="Check Camera Status">
+                            <IconButton
+                              color="info"
+                              onClick={() => checkCamera(camera.cameraId)}
+                              disabled={isChecking}
+                              size="small"
+                            >
+                              {isChecking ? <CircularProgress size={16} /> : <RefreshIcon />}
+                            </IconButton>
                           </Tooltip>
-                        )}
-                        {status?.lastChecked && (
-                          <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                            Last checked: {status.lastChecked}
-                          </Typography>
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {getResolution(camera.cameraId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {getEncoding(camera.cameraId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {getFPS(camera.cameraId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {getBitrate(camera.cameraId)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {getValidationChip(camera.cameraId)}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={camera.isFake ? 'Simulated' : 'Real'}
-                        color={camera.isFake ? 'warning' : 'primary'}
-                        variant="outlined"
-                      />
-                    </TableCell>
-                    <TableCell align="center">
-                      <Box display="flex" gap={1}>
-                        <Tooltip title="Check Camera Status">
-                          <IconButton
-                            color="info"
-                            onClick={() => checkCamera(camera.cameraId)}
-                            disabled={isChecking}
-                            size="small"
-                          >
-                            {isChecking ? <CircularProgress size={16} /> : <RefreshIcon />}
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Configure Camera">
-                          <IconButton
-                            color="secondary"
-                            onClick={() => handleOpenConfig(camera.cameraId)}
-                            size="small"
-                          >
-                            <SettingsIcon />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Launch VLC Player">
-                          <IconButton
-                            color="primary"
-                            onClick={() => handleLaunchVLC(camera.cameraId)}
-                            disabled={hasError}
-                            size="small"
-                          >
-                            <PlayIcon />
-                          </IconButton>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                          <Tooltip title="Configure Camera">
+                            <IconButton
+                              color="secondary"
+                              onClick={() => handleOpenConfig(camera.cameraId)}
+                              size="small"
+                            >
+                              <SettingsIcon />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="Launch VLC Player">
+                            <IconButton
+                              color="primary"
+                              onClick={() => handleLaunchVLC(camera.cameraId)}
+                              disabled={hasError}
+                              size="small"
+                            >
+                              <PlayIcon />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          
+          {/* Bottom Pagination */}
+          {PaginationComponent}
+        </Box>
       )}
 
       {/* Configuration Dialog */}

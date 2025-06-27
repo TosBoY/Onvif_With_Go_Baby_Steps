@@ -85,11 +85,8 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 		Username: username,
 		Password: password,
 		IsFake:   isFake,
-	}
-
-	// Add the new camera to the in-memory list
+	} // Add the new camera to the in-memory list
 	inMemoryCameras = append(inMemoryCameras, newCamera)
-
 	// Initialize the camera client and add it to connectedCameras
 	if isFake {
 		// Create a fake camera client
@@ -116,9 +113,8 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 // Returns any error encountered.
 func RemoveCamera(id string) error {
 	// Find the camera and remove it
-	var found bool
-	var updatedCameras []models.Camera
-
+	found := false
+	updatedCameras := make([]models.Camera, 0, len(inMemoryCameras))
 	for _, cam := range inMemoryCameras {
 		if cam.ID != id {
 			updatedCameras = append(updatedCameras, cam)
@@ -135,5 +131,6 @@ func RemoveCamera(id string) error {
 
 	// Update the in-memory list
 	inMemoryCameras = updatedCameras
+
 	return nil
 }

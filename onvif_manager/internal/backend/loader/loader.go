@@ -9,18 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
-	"main_back/pkg/models"
+	"onvif_manager/pkg/models"
 )
 
-// findCameraCSVPath dynamically searches for the main_back folder first, then uses the fixed path to cameras.csv
+// findCameraCSVPath dynamically searches for the onvif_manager folder first, then uses the fixed path to cameras.csv
 func findCameraCSVPath() (string, error) {
-	mainBackDir, err := findMainFolder()
+	onvifManagerDir, err := findOnvifManagerFolder()
 	if err != nil {
-		return "", fmt.Errorf("failed to locate main_back folder: %w", err)
+		return "", fmt.Errorf("failed to locate onvif_manager folder: %w", err)
 	}
 
-	// Fixed path within main_back folder
-	csvPath := filepath.Join(mainBackDir, "internal", "loader", "cameras.csv")
+	// Fixed path within onvif_manager folder
+	csvPath := filepath.Join(onvifManagerDir, "internal", "backend", "loader", "cameras.csv")
 
 	// Verify the CSV file exists at the expected location
 	if _, err := os.Stat(csvPath); err != nil {
@@ -30,8 +30,8 @@ func findCameraCSVPath() (string, error) {
 	return csvPath, nil
 }
 
-// findMainFolder searches for the main_back folder starting from common locations
-func findMainFolder() (string, error) {
+// findOnvifManagerFolder searches for the onvif_manager folder starting from common locations
+func findOnvifManagerFolder() (string, error) {
 	// Get the current executable path
 	execPath, err := os.Executable()
 	if err != nil {
@@ -50,29 +50,29 @@ func findMainFolder() (string, error) {
 
 	// Search from each starting point
 	for _, startDir := range searchDirs {
-		if onvifDir := searchUpwardsForMain(startDir); onvifDir != "" {
+		if onvifDir := searchUpwardsForOnvifManager(startDir); onvifDir != "" {
 			return onvifDir, nil
 		}
 	}
 
-	return "", fmt.Errorf("main_back folder not found from executable path (%s) or working directory (%s)", execDir, workingDir)
+	return "", fmt.Errorf("onvif_manager folder not found from executable path (%s) or working directory (%s)", execDir, workingDir)
 }
 
 // searchUpwardsForOnvifManager searches upwards from a starting directory for the onvif_manager folder
-func searchUpwardsForMain(startDir string) string {
+func searchUpwardsForOnvifManager(startDir string) string {
 	currentDir := startDir
 
 	// Search upwards through directory tree (max 10 levels to prevent infinite loops)
 	for i := 0; i < 10; i++ {
-		// Check if current directory is main_back
-		if filepath.Base(currentDir) == "main_back" {
+		// Check if current directory is onvif_manager
+		if filepath.Base(currentDir) == "onvif_manager" {
 			return currentDir
 		}
 
-		// Check if main_back exists as a subdirectory
-		mainBackPath := filepath.Join(currentDir, "main_back")
-		if info, err := os.Stat(mainBackPath); err == nil && info.IsDir() {
-			return mainBackPath
+		// Check if onvif_manager exists as a subdirectory
+		onvifManagerPath := filepath.Join(currentDir, "onvif_manager")
+		if info, err := os.Stat(onvifManagerPath); err == nil && info.IsDir() {
+			return onvifManagerPath
 		}
 
 		// Move up one directory level
@@ -180,7 +180,7 @@ func parseRTSPURL(camID, rtspURL string) (models.Camera, error) {
 	camera := models.Camera{
 		ID:       camID,
 		IP:       host,
-		Port:     0,
+		Port:     0, // Use ONVIF port instead of RTSP port
 		URL:      "",
 		Username: username,
 		Password: password,

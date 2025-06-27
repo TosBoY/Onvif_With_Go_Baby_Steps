@@ -1,13 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -245,8 +248,27 @@ func HandleCheckSingleCam(w http.ResponseWriter, r *http.Request) {
 		client, err = camera.NewCameraClient(*targetCamera)
 		if err != nil {
 			log.Printf("Failed to initialize camera %s: %v", targetCamera.ID, err)
-			result["status"] = "offline"
-			result["error"] = fmt.Sprintf("Failed to initialize: %v", err)
+
+			// Ping the camera to determine if it's a network issue (offline) or ONVIF issue (error)
+			log.Printf("Pinging camera %s at IP %s to determine connectivity", targetCamera.ID, targetCamera.IP)
+			pingSuccess, pingOutput, pingErr := pingHost(targetCamera.IP, 5*time.Second)
+
+			if pingSuccess {
+				// Camera is reachable but ONVIF failed - this is an error
+				result["status"] = "error"
+				result["error"] = fmt.Sprintf("Camera is reachable but ONVIF initialization failed: %v", err)
+				log.Printf("Camera %s is reachable via ping but ONVIF failed", targetCamera.ID)
+			} else {
+				// Camera is not reachable - this is offline
+				result["status"] = "offline"
+				if pingErr != nil {
+					result["error"] = fmt.Sprintf("Camera not reachable: %v", pingErr)
+				} else {
+					result["error"] = fmt.Sprintf("Camera not reachable: %s", pingOutput)
+				}
+				log.Printf("Camera %s is not reachable via ping", targetCamera.ID)
+			}
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(result)
 			return
@@ -286,18 +308,35 @@ func HandleCheckSingleCam(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Failed to get camera profiles and configs for %s (IP: %s:%d): %v", targetCamera.ID, client.Camera.IP, client.Camera.Port, err)
 
-		result["status"] = "offline"
-		// Add more specific error information for network issues
-		errorMsg := err.Error()
-		if strings.Contains(errorMsg, "i/o timeout") || strings.Contains(errorMsg, "dial tcp") {
-			result["error"] = "Network timeout: camera is not responding"
-		} else if strings.Contains(errorMsg, "connection refused") {
-			result["error"] = "Connection refused: check ONVIF port and service"
-		} else if strings.Contains(errorMsg, "no route to host") {
-			result["error"] = "No route to host: check network connectivity"
+		// Ping the camera to determine if it's a network issue (offline) or ONVIF issue (error)
+		log.Printf("Pinging camera %s at IP %s to determine connectivity after profiles failure", targetCamera.ID, targetCamera.IP)
+		pingSuccess, pingOutput, pingErr := pingHost(targetCamera.IP, 5*time.Second)
+
+		if pingSuccess {
+			// Camera is reachable but ONVIF profiles failed - this is an error
+			result["status"] = "error"
+			errorMsg := err.Error()
+			if strings.Contains(errorMsg, "i/o timeout") || strings.Contains(errorMsg, "dial tcp") {
+				result["error"] = "Camera reachable but ONVIF timeout: check ONVIF service"
+			} else if strings.Contains(errorMsg, "connection refused") {
+				result["error"] = "Connection refused: check ONVIF port and service"
+			} else if strings.Contains(errorMsg, "no route to host") {
+				result["error"] = "No route to host: check network connectivity"
+			} else {
+				result["error"] = fmt.Sprintf("Camera reachable but ONVIF profiles failed: %v", err)
+			}
+			log.Printf("Camera %s is reachable via ping but ONVIF profiles failed", targetCamera.ID)
 		} else {
-			result["error"] = fmt.Sprintf("Failed to get profiles: %v", err)
+			// Camera is not reachable - this is offline
+			result["status"] = "offline"
+			if pingErr != nil {
+				result["error"] = fmt.Sprintf("Camera not reachable: %v", pingErr)
+			} else {
+				result["error"] = fmt.Sprintf("Camera not reachable: %s", pingOutput)
+			}
+			log.Printf("Camera %s is not reachable via ping during profiles check", targetCamera.ID)
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 		return
@@ -305,7 +344,7 @@ func HandleCheckSingleCam(w http.ResponseWriter, r *http.Request) {
 
 	if len(profileTokens) == 0 {
 		log.Printf("No profiles found for camera %s", targetCamera.ID)
-		result["status"] = "offline"
+		result["status"] = "error"
 		result["error"] = "No profiles found"
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
@@ -314,7 +353,7 @@ func HandleCheckSingleCam(w http.ResponseWriter, r *http.Request) {
 
 	if len(configTokens) == 0 {
 		log.Printf("No video encoder configuration found for camera %s", targetCamera.ID)
-		result["status"] = "offline"
+		result["status"] = "error"
 		result["error"] = "No video encoder configuration found"
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
@@ -2275,4 +2314,89 @@ func HandleValidateCam(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// pingHost checks if a host is reachable via ping
+func pingHost(host string, timeout time.Duration) (bool, string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	var cmd *exec.Cmd
+
+	if runtime.GOOS == "windows" {
+		// Windows: ping -n 1 -w 3000 hostname
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "3000", host)
+	} else {
+		// Linux/macOS: ping -c 1 -W 3 hostname
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "3", host)
+	}
+
+	output, err := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return false, "Ping timeout", fmt.Errorf("ping timeout after %v", timeout)
+	}
+
+	// Check for unreachable host patterns in the output (cross-platform)
+	outputLower := strings.ToLower(outputStr)
+	unreachablePatterns := []string{
+		"destination host unreachable",
+		"destination net unreachable",
+		"host unreachable",
+		"no route to host",
+		"request timed out",
+		"could not find host",
+		"network is unreachable",          // Linux specific
+		"connect: network is unreachable", // Linux specific
+		"ping: cannot resolve",            // Linux DNS failure
+		"name or service not known",       // Linux DNS failure
+	}
+
+	for _, pattern := range unreachablePatterns {
+		if strings.Contains(outputLower, pattern) {
+			return false, outputStr, fmt.Errorf("host unreachable: %s", pattern)
+		}
+	}
+
+	// Platform-specific success/failure detection
+	if runtime.GOOS == "windows" {
+		// Windows: look for successful ping patterns
+		if strings.Contains(outputLower, "reply from") && !strings.Contains(outputLower, "unreachable") {
+			return true, outputStr, nil
+		}
+		// If no "reply from" or contains unreachable, it's failed
+		return false, outputStr, fmt.Errorf("ping failed: no valid reply received")
+	} else {
+		// Linux/macOS: check for successful ping patterns
+		successPatterns := []string{
+			"1 received",
+			"1 packets transmitted, 1 received",
+			"1 packets transmitted, 1 packets received", // Some Linux variants
+			"rtt min/avg/max",                           // Success indicator
+		}
+
+		hasSuccess := false
+		for _, pattern := range successPatterns {
+			if strings.Contains(outputLower, pattern) {
+				hasSuccess = true
+				break
+			}
+		}
+
+		if hasSuccess {
+			return true, outputStr, nil
+		}
+
+		// Check exit code as fallback for Linux/macOS
+		if err != nil {
+			return false, outputStr, err
+		}
+
+		if cmd.ProcessState.ExitCode() == 0 {
+			return true, outputStr, nil
+		}
+
+		return false, outputStr, fmt.Errorf("ping failed: exit code %d", cmd.ProcessState.ExitCode())
+	}
 }

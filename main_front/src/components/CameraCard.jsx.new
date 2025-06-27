@@ -21,7 +21,6 @@ import { launchVLC } from '../services/api';
 
 const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
   const getStatusColor = () => {
-    if (camera.isFake) return 'warning';
     return 'success';
   };
   
@@ -67,23 +66,22 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>  
               <Chip 
-                label={camera.isFake ? 'Simulation' : 'Connected'} 
+                label="Connected" 
                 color={getStatusColor()} 
                 size="small"
                 sx={{ height: '18px', '& .MuiChip-label': { px: 0.75, fontSize: '0.65rem' } }}
               />
-              {!camera.isFake && (
-                <Tooltip title="Launch VLC with stream">
-                  <IconButton 
-                    color="primary" 
-                    size="small"
-                    onClick={handleLaunchVLC}
-                    sx={{ padding: 0.5 }}
-                  >
-                    <PlayArrowIcon sx={{ fontSize: '0.9rem' }} />
-                  </IconButton>
-                </Tooltip>
-              )}
+              <Tooltip title="Launch VLC with stream">
+                <IconButton 
+                  color="primary" 
+                  size="small"
+                  onClick={handleLaunchVLC}
+                  sx={{ padding: 0.5 }}
+                >
+                  <PlayArrowIcon sx={{ fontSize: '0.9rem' }} />
+                </IconButton>
+              </Tooltip>
+            </Box>
             </Box>
           </Box>
         </CardContent>
@@ -127,21 +125,20 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false }) => {
           Camera {camera.id}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Chip 
-              label={camera.isFake ? 'Simulation' : 'Connected'} 
+              label="Connected" 
               color={getStatusColor()} 
               size="small" 
             />
-            {!camera.isFake && (
-              <Tooltip title="Launch VLC with stream">
-                <IconButton 
-                  color="primary"
-                  size="small"
-                  onClick={handleLaunchVLC}
-                >
-                  <PlayArrowIcon />
-                </IconButton>
-              </Tooltip>
-            )}
+            <Tooltip title="Launch VLC with stream">
+              <IconButton 
+                color="primary"
+                size="small"
+                onClick={handleLaunchVLC}
+              >
+                <PlayArrowIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
           </Box>
         </Typography>
         <Typography variant="body2" color="text.secondary">

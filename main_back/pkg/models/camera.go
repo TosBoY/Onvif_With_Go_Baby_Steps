@@ -7,7 +7,6 @@ type Camera struct {
 	URL      string `json:"url"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	IsFake   bool   `json:"isFake"`
 }
 
 type EncoderConfig struct {

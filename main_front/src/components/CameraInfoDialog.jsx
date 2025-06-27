@@ -98,7 +98,7 @@ const CameraInfoDialog = ({ open, onClose, camera, onCameraDeleted }) => {
             <Typography variant="body2">{camera.username}</Typography>
             
             <Typography variant="body2" color="text.secondary">Type:</Typography>
-            <Typography variant="body2">{camera.isFake ? 'Simulated Camera' : 'ONVIF Camera'}</Typography>
+            <Typography variant="body2">ONVIF Camera</Typography>
           </Box>
         </Box>
         

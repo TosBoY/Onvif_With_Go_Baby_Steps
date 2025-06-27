@@ -55,7 +55,7 @@ const Dashboard = () => {
   const [newCameraURL, setNewCameraURL] = useState('');
   const [newCameraUsername, setNewCameraUsername] = useState('');
   const [newCameraPassword, setNewCameraPassword] = useState('');
-  const [newCameraIsFake, setNewCameraIsFake] = useState(false);  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [addingCamera, setAddingCamera] = useState(false);
   const [addCameraError, setAddCameraError] = useState('');
     // CSV import state
@@ -209,7 +209,6 @@ const Dashboard = () => {
     setNewCameraURL('');
     setNewCameraUsername('');
     setNewCameraPassword('');
-    setNewCameraIsFake(false);
     setAddCameraError('');
   };
     const handleAddCameraDialogClose = () => {
@@ -234,10 +233,10 @@ const Dashboard = () => {
     
     setAddingCamera(true);
     setAddCameraError('');
-      try {
+    try {
       // Convert port to number, default to 0 if empty
       const portValue = newCameraPort ? parseInt(newCameraPort, 10) : 0;
-      const newCamera = await addNewCamera(newCameraIP, portValue, newCameraURL, newCameraUsername, newCameraPassword, newCameraIsFake);
+      const newCamera = await addNewCamera(newCameraIP, portValue, newCameraURL, newCameraUsername, newCameraPassword);
       console.log('New camera added:', newCamera);
         // Close the dialog and refresh camera list
       setAddCameraDialogOpen(false);
@@ -1054,50 +1053,6 @@ const Dashboard = () => {
           <Typography variant="caption" color="text.secondary">
             Enter the password for camera authentication (leave empty if not required)
           </Typography>
-          
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            mt: 2, 
-            p: 1.5, 
-            border: '1px solid',
-            borderColor: newCameraIsFake ? 'primary.light' : 'divider',
-            borderRadius: 1,
-            bgcolor: newCameraIsFake ? 'action.hover' : 'transparent'
-          }}>
-            <FormControl fullWidth>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <input
-                  type="checkbox"
-                  id="camera-fake"
-                  checked={newCameraIsFake}
-                  onChange={(e) => setNewCameraIsFake(e.target.checked)}
-                  style={{ 
-                    marginRight: '12px', 
-                    width: '18px', 
-                    height: '18px', 
-                    accentColor: newCameraIsFake ? '#1976d2' : undefined 
-                  }}
-                />
-                <Typography 
-                  onClick={() => setNewCameraIsFake(!newCameraIsFake)} 
-                  sx={{ 
-                    cursor: 'pointer', 
-                    color: newCameraIsFake ? 'primary.main' : 'text.primary',
-                    fontWeight: newCameraIsFake ? '500' : 'normal',
-                    flex: 1
-                  }}
-                >
-                  Use as fake camera (for testing)
-                </Typography>
-              </Box>
-              {newCameraIsFake && (
-                <Typography variant="caption" sx={{ mt: 1, display: 'block', ml: 3.5, color: 'info.main' }}>
-                  Fake cameras allow you to test the application without connecting to a physical ONVIF camera.
-                  The system will skip authentication and connection validation for this device.
-                </Typography>
-              )}
-            </FormControl>          </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button 

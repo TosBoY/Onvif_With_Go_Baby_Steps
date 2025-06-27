@@ -1,5 +1,5 @@
-id,ip,port,url,username,password,isFake
-1,192.168.1.12,80,,admin,admin123,false
-2,192.168.1.30,0,,admin,Admin123,false
-3,192.168.1.31,80,,admin,Admin123,false
-4,192.168.1.15,0,,admin,Admin123,true
+id,ip,port,url,username,password
+1,192.168.1.12,80,,admin,admin123
+2,192.168.1.30,0,,admin,Admin123
+3,192.168.1.31,80,,admin,Admin123
+4,192.168.1.15,0,,admin,Admin123

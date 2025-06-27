@@ -134,11 +134,11 @@ This starts the API server at http://localhost:8090, which can be accessed by an
 
 ### Camera CSV Format
 ```
-id,ip,port,url,username,password,isFake
-1,192.168.10.101,80,,admin,MySecurePass1,false
-2,192.168.10.102,0,,operator,CameraPass#2,false
-3,192.168.10.103,80,,administrator,Secure$Pass3,false
-4,192.168.10.104,0,,root,TestDevice#4,true
+id,ip,port,url,username,password
+1,192.168.10.101,80,,admin,MySecurePass1
+2,192.168.10.102,0,,operator,CameraPass#2
+3,192.168.10.103,80,,administrator,Secure$Pass3
+4,192.168.10.104,0,,root,TestDevice#4
 ```
 
 ### Configuration CSV Format
@@ -171,13 +171,6 @@ onvif-manager.exe web
 ```
 
 Then navigate to http://localhost:8090 in your web browser.
-
-### Example 3: Using with Fake/Test Cameras
-
-```bash
-# Test with simulated cameras
-onvif-manager.exe config apply examples/fake_camera_test.csv examples/config_720p.csv
-```
 
 ---
 

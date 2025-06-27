@@ -207,16 +207,12 @@ func runListCameras() error {
 	}
 
 	fmt.Printf("\n📋 Found %d camera(s):\n\n", len(cameras))
-	fmt.Printf("%-15s %-15s %-8s %-20s %-12s %-8s\n", "ID", "IP", "Port", "Username", "URL", "IsFake")
-	fmt.Println(strings.Repeat("-", 80))
+	fmt.Printf("%-15s %-15s %-8s %-20s %-12s\n", "ID", "IP", "Port", "Username", "URL")
+	fmt.Println(strings.Repeat("-", 70))
 
 	for _, camera := range cameras {
-		fakeStatus := "No"
-		if camera.IsFake {
-			fakeStatus = "Yes"
-		}
-		fmt.Printf("%-15s %-15s %-8d %-20s %-12s %-8s\n",
-			camera.ID, camera.IP, camera.Port, camera.Username, camera.URL, fakeStatus)
+		fmt.Printf("%-15s %-15s %-8d %-20s %-12s\n",
+			camera.ID, camera.IP, camera.Port, camera.Username, camera.URL)
 	}
 
 	fmt.Printf("\nTotal: %d cameras\n", len(cameras))
@@ -242,11 +238,7 @@ func runSelectCameras(csvFile string) error {
 	if len(result.SelectedCameras) > 0 {
 		fmt.Printf("\n🎯 Selected cameras:\n")
 		for _, camera := range result.SelectedCameras {
-			fakeStatus := ""
-			if camera.IsFake {
-				fakeStatus = " (Simulated)"
-			}
-			fmt.Printf("   • %s - %s%s\n", camera.ID, camera.IP, fakeStatus)
+			fmt.Printf("   • %s - %s\n", camera.ID, camera.IP)
 		}
 	}
 
@@ -340,9 +332,6 @@ func runApplyConfig(cameraCSV, configCSV string) error {
 		}
 
 		fmt.Printf("   • Camera %s: %s", cameraID, status)
-		if result.IsFake {
-			fmt.Printf(" (Simulated)")
-		}
 		if !result.Success && result.Error != nil {
 			fmt.Printf(" - %s", result.Error.Error())
 		}
@@ -560,9 +549,6 @@ func runApplyToSelected(cameraCSV string) error {
 		}
 
 		fmt.Printf("   • Camera %s: %s", cameraID, status)
-		if result.IsFake {
-			fmt.Printf(" (Simulated)")
-		}
 		if !result.Success && result.Error != nil {
 			fmt.Printf(" - %s", result.Error.Error())
 		}
@@ -644,11 +630,7 @@ func runImportCameras(csvFile string) error {
 		fmt.Printf("\n✨ Successfully added cameras:\n")
 		for _, rowResult := range result.Results {
 			if rowResult.Success {
-				fakeStatus := ""
-				if rowResult.Camera.IsFake {
-					fakeStatus = " (Simulated)"
-				}
-				fmt.Printf("   • Camera ID: %s - %s%s\n", rowResult.CameraID, rowResult.Camera.IP, fakeStatus)
+				fmt.Printf("   • Camera ID: %s - %s\n", rowResult.CameraID, rowResult.Camera.IP)
 			}
 		}
 	}

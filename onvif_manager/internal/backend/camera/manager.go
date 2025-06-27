@@ -54,7 +54,7 @@ func GetAllCameras() []models.Camera {
 // AddNewCamera adds a new camera to the in-memory storage and assigns it an ID
 // that is one greater than the largest existing ID.
 // Returns the new camera ID and any error encountered.
-func AddNewCamera(ip string, port int, url string, username string, password string, isFake bool) (string, error) {
+func AddNewCamera(ip string, port int, url string, username string, password string) (string, error) {
 	// Check if a camera with the same IP already exists
 	for _, cam := range inMemoryCameras {
 		if cam.IP == ip {
@@ -84,24 +84,16 @@ func AddNewCamera(ip string, port int, url string, username string, password str
 		URL:      url,
 		Username: username,
 		Password: password,
-		IsFake:   isFake,
 	} // Add the new camera to the in-memory list
 	inMemoryCameras = append(inMemoryCameras, newCamera)
 	// Initialize the camera client and add it to connectedCameras
-	if isFake {
-		// Create a fake camera client
-		client := NewFakeCameraClient(newCamera)
-		connectedCameras[newID] = client
+	client, err := NewCameraClient(newCamera)
+	if err != nil {
+		// Log the error but don't fail - we still want to add the camera to the list
+		fmt.Printf("Warning: Failed to initialize camera client for %s: %v\n", newID, err)
 	} else {
-		// Attempt to create a real camera client
-		client, err := NewCameraClient(newCamera)
-		if err != nil {
-			// Log the error but don't fail - we still want to add the camera to the list
-			fmt.Printf("Warning: Failed to initialize camera client for %s: %v\n", newID, err)
-		} else {
-			// Add to connected cameras
-			connectedCameras[newID] = client
-		}
+		// Add to connected cameras
+		connectedCameras[newID] = client
 	}
 
 	// Return the new camera ID

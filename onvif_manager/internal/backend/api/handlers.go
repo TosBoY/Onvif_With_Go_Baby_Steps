@@ -77,7 +77,6 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 		URL      string `json:"url"`
 		Username string `json:"username"`
 		Password string `json:"password"`
-		IsFake   bool   `json:"isFake"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
@@ -99,9 +98,9 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Password can be empty for some cameras, so we don't check for it
-	log.Printf("Adding new camera with IP: %s, Port: %d, URL: %s, Username: %s, IsFake: %v",
-		input.IP, input.Port, input.URL, input.Username, input.IsFake)
-	newID, err := camera.AddNewCamera(input.IP, input.Port, input.URL, input.Username, input.Password, input.IsFake)
+	log.Printf("Adding new camera with IP: %s, Port: %d, URL: %s, Username: %s",
+		input.IP, input.Port, input.URL, input.Username)
+	newID, err := camera.AddNewCamera(input.IP, input.Port, input.URL, input.Username, input.Password)
 	if err != nil {
 		log.Printf("Error adding new camera: %v", err)
 		http.Error(w, fmt.Sprintf("Failed to add new camera: %v", err), http.StatusInternalServerError)
@@ -115,7 +114,6 @@ func HandleAddCamera(w http.ResponseWriter, r *http.Request) {
 		URL:      input.URL,
 		Username: input.Username,
 		Password: input.Password,
-		IsFake:   input.IsFake,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -173,7 +171,6 @@ func HandleLoadCamList(w http.ResponseWriter, r *http.Request) {
 			"ip":       cam.IP,
 			"port":     cam.Port,
 			"username": cam.Username,
-			"isFake":   cam.IsFake,
 			"url":      cam.URL,
 		}
 		results = append(results, result)
@@ -232,77 +229,41 @@ func HandleCheckSingleCam(w http.ResponseWriter, r *http.Request) {
 		"ip":       targetCamera.IP,
 		"port":     targetCamera.Port,
 		"username": targetCamera.Username,
-		"isFake":   targetCamera.IsFake,
 		"status":   "unknown",
 		"error":    "",
 	}
 
 	// Try to initialize the camera client
-	var client *camera.CameraClient
+	client, err := camera.NewCameraClient(*targetCamera)
+	if err != nil {
+		log.Printf("Failed to initialize camera %s: %v", targetCamera.ID, err)
 
-	if targetCamera.IsFake {
-		// For fake cameras, create a fake client
-		client = camera.NewFakeCameraClient(*targetCamera)
-	} else {
-		// For real cameras, try to connect via ONVIF
-		client, err = camera.NewCameraClient(*targetCamera)
-		if err != nil {
-			log.Printf("Failed to initialize camera %s: %v", targetCamera.ID, err)
+		// Ping the camera to determine if it's a network issue (offline) or ONVIF issue (error)
+		log.Printf("Pinging camera %s at IP %s to determine connectivity", targetCamera.ID, targetCamera.IP)
+		pingSuccess, pingOutput, pingErr := pingHost(targetCamera.IP, 5*time.Second)
 
-			// Ping the camera to determine if it's a network issue (offline) or ONVIF issue (error)
-			log.Printf("Pinging camera %s at IP %s to determine connectivity", targetCamera.ID, targetCamera.IP)
-			pingSuccess, pingOutput, pingErr := pingHost(targetCamera.IP, 5*time.Second)
-
-			if pingSuccess {
-				// Camera is reachable but ONVIF failed - this is an error
-				result["status"] = "error"
-				result["error"] = fmt.Sprintf("Camera is reachable but ONVIF initialization failed: %v", err)
-				log.Printf("Camera %s is reachable via ping but ONVIF failed", targetCamera.ID)
+		if pingSuccess {
+			// Camera is reachable but ONVIF failed - this is an error
+			result["status"] = "error"
+			result["error"] = fmt.Sprintf("Camera is reachable but ONVIF initialization failed: %v", err)
+			log.Printf("Camera %s is reachable via ping but ONVIF failed", targetCamera.ID)
+		} else {
+			// Camera is not reachable - this is offline
+			result["status"] = "offline"
+			if pingErr != nil {
+				result["error"] = fmt.Sprintf("Camera not reachable: %v", pingErr)
 			} else {
-				// Camera is not reachable - this is offline
-				result["status"] = "offline"
-				if pingErr != nil {
-					result["error"] = fmt.Sprintf("Camera not reachable: %v", pingErr)
-				} else {
-					result["error"] = fmt.Sprintf("Camera not reachable: %s", pingOutput)
-				}
-				log.Printf("Camera %s is not reachable via ping", targetCamera.ID)
+				result["error"] = fmt.Sprintf("Camera not reachable: %s", pingOutput)
 			}
-
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(result)
-			return
+			log.Printf("Camera %s is not reachable via ping", targetCamera.ID)
 		}
-	}
-
-	// Check if camera is fake and handle it differently
-	if client.Camera.IsFake {
-		log.Printf("Camera %s is a simulated device", targetCamera.ID)
-		result["status"] = "online"
-		result["currentConfig"] = map[string]interface{}{
-			"resolution": map[string]int{
-				"width":  1920,
-				"height": 1080,
-			},
-			"fps":      30,
-			"bitrate":  2000,
-			"encoding": "h264",
-			"quality":  5,
-		}
-		result["availableResolutions"] = []map[string]int{
-			{"width": 1920, "height": 1080},
-			{"width": 1280, "height": 720},
-			{"width": 640, "height": 480},
-		}
-		result["profileToken"] = "fake_profile_token"
-		result["configToken"] = "fake_config_token"
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(result)
 		return
 	}
 
-	// For real cameras, try to get configuration
+	// Try to get configuration
 	log.Printf("Getting profiles and configs for camera %s (IP: %s:%d)", targetCamera.ID, client.Camera.IP, client.Camera.Port)
 	profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
 	if err != nil {
@@ -480,7 +441,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		CameraID           string
 		Success            bool
 		Error              error
-		IsFake             bool
 		AppliedConfig      map[string]interface{}
 		ResolutionAdjusted bool
 		ProfileToken       string
@@ -508,25 +468,7 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Check if camera is fake and handle it differently
-		if client.Camera.IsFake {
-			log.Printf("Camera %s is a simulated device, skipping real configuration", cameraID)
-			// For fake cameras, we simulate successful config application
-			result.Success = true
-			result.IsFake = true
-			result.AppliedConfig = map[string]interface{}{
-				"resolution": map[string]int{
-					"width":  input.Width,
-					"height": input.Height,
-				},
-				"fps":      input.FPS,
-				"bitrate":  input.Bitrate,
-				"encoding": input.Encoding,
-			}
-			results[cameraID] = result
-			continue
-		}
-		// For real cameras, proceed with config application
+		// Proceed with config application
 		log.Printf("\n Getting profiles and configs for camera %s (IP: %s:%d)", cameraID, client.Camera.IP, client.Camera.Port)
 		profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
 		if err != nil {
@@ -675,54 +617,30 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 			log.Printf("No configuration result found for camera %s, skipping validation", cameraID)
 			continue
 		}
-		if !result.Success || result.IsFake {
-			// Skip validation for failed configs or fake cameras
-			if result.IsFake {
-				position := findCameraPosition(cameraID)
-				log.Printf("Adding simulated validation results for fake camera %s (position %d in original order)", cameraID, position) // Add simulated validation results for fake cameras
-				validationResults[cameraID] = map[string]interface{}{
-					"isValid":         true,
-					"expectedWidth":   input.Width,
-					"expectedHeight":  input.Height,
-					"expectedFPS":     input.FPS,
-					"expectedBitrate": input.Bitrate,
-					"actualWidth":     input.Width, // For fake cameras, actual matches expected
-					"actualHeight":    input.Height,
-					"actualFPS":       input.FPS,
-					"actualBitrate":   input.Bitrate,
-					"streamInfo": map[string]interface{}{
-						"width":    input.Width,
-						"height":   input.Height,
-						"fps":      input.FPS,
-						"bitrate":  input.Bitrate,
-						"codec":    "h264 (simulated)",
-						"duration": "live stream",
-					},
-					"message": "Simulated camera configuration applied successfully",
-				}
-			} else {
-				// Add validation results for failed configuration cameras
-				position := findCameraPosition(cameraID)
-				log.Printf("Adding failed validation results for camera %s (position %d in original order)", cameraID, position)
-				errorMessage := "Configuration failed - camera not reachable"
-				if result.Error != nil {
-					errorMessage = result.Error.Error()
-				}
-				validationResults[cameraID] = map[string]interface{}{
-					"isValid":         false,
-					"expectedWidth":   input.Width,
-					"expectedHeight":  input.Height,
-					"expectedFPS":     input.FPS,
-					"expectedBitrate": input.Bitrate,
-					"actualWidth":     0,
-					"actualHeight":    0,
-					"actualFPS":       0.0,
-					"actualBitrate":   0,
-					"error":           errorMessage,
-				}
+		if !result.Success {
+			// Skip validation for failed configs - add validation results for failed configuration cameras
+			position := findCameraPosition(cameraID)
+			log.Printf("Adding failed validation results for camera %s (position %d in original order)", cameraID, position)
+			errorMessage := "Configuration failed - camera not reachable"
+			if result.Error != nil {
+				errorMessage = result.Error.Error()
+			}
+			validationResults[cameraID] = map[string]interface{}{
+				"isValid":          false,
+				"expectedWidth":    input.Width,
+				"expectedHeight":   input.Height,
+				"expectedFPS":      input.FPS,
+				"expectedBitrate":  input.Bitrate,
+				"expectedEncoding": input.Encoding,
+				"actualWidth":      0,
+				"actualHeight":     0,
+				"actualFPS":        0.0,
+				"actualBitrate":    0,
+				"error":            errorMessage,
 			}
 			continue
-		} // Validate the stream using FFmpeg CGO
+		}
+		// Validate the stream using FFmpeg CGO
 		position := findCameraPosition(cameraID)
 		log.Printf("Starting FFmpeg validation for camera %s (position %d in original order)", cameraID, position)
 		validationResult, validationErr := ffmpeg.ValidateStream(result.StreamURL, input.Width, input.Height, input.FPS, input.Bitrate, input.Encoding)
@@ -822,21 +740,16 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 	// Log summary of configuration results
 	successCount := 0
 	failureCount := 0
-	fakeCount := 0
 
 	for _, result := range results {
 		if result.Success {
-			if result.IsFake {
-				fakeCount++
-			} else {
-				successCount++
-			}
+			successCount++
 		} else {
 			failureCount++
 		}
 	}
 
-	log.Printf("Configuration Summary: %d successful, %d failed, %d simulated", successCount, failureCount, fakeCount)
+	log.Printf("Configuration Summary: %d successful, %d failed", successCount, failureCount)
 	if failureCount > 0 {
 		log.Printf("Failed cameras:")
 		for cameraID, result := range results {
@@ -887,7 +800,6 @@ func HandleApplyConfig(w http.ResponseWriter, r *http.Request) {
 		if result.Success {
 			cameraResult["appliedConfig"] = result.AppliedConfig
 			cameraResult["resolutionAdjusted"] = result.ResolutionAdjusted
-			cameraResult["isFake"] = result.IsFake
 
 			if validation, ok := validationResults[cameraID]; ok {
 				cameraResult["validation"] = validation
@@ -943,24 +855,6 @@ func HandleVLC(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found camera %s (IP: %s:%d)", targetCamera.ID, targetCamera.IP, targetCamera.Port)
-
-	// Check if camera is fake and handle it differently
-	if targetCamera.IsFake {
-		log.Printf("Camera %s is a simulated device, providing simulated stream URL", input.CameraID)
-
-		// For fake cameras, we'll return a simulated response
-		simulatedStreamUrl := fmt.Sprintf("rtsp://fake-stream-simulation/%s", input.CameraID)
-
-		response := map[string]interface{}{
-			"message":   "Simulated stream URL generated (no actual VLC launched for simulated camera)",
-			"streamUrl": simulatedStreamUrl,
-			"isFake":    true,
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
 
 	// Create a camera client for this specific camera
 	client, err := camera.NewCameraClient(*targetCamera)
@@ -1495,11 +1389,9 @@ func HandleImportCamerasCSV(w http.ResponseWriter, r *http.Request) {
 			URL      string
 			Username string
 			Password string
-			IsFake   bool
 		}{
-			Port:   80,    // Default ONVIF port
-			URL:    "",    // Default empty
-			IsFake: false, // Default to real camera
+			Port: 80, // Default ONVIF port
+			URL:  "", // Default empty
 		}
 
 		// Extract IP (required)
@@ -1553,17 +1445,11 @@ func HandleImportCamerasCSV(w http.ResponseWriter, r *http.Request) {
 			cameraData.Password = strings.TrimSpace(record[passwordIndex])
 		}
 
-		if fakeIndex, exists := columnIndices["isfake"]; exists && fakeIndex < len(record) {
-			if fakeStr := strings.ToLower(strings.TrimSpace(record[fakeIndex])); fakeStr != "" {
-				cameraData.IsFake = (fakeStr == "true" || fakeStr == "1" || fakeStr == "yes")
-			}
-		}
-
 		// Attempt to add the camera
-		log.Printf("Adding camera from row %d: IP=%s, Port=%d, Username=%s, IsFake=%v",
-			rowNum, cameraData.IP, cameraData.Port, cameraData.Username, cameraData.IsFake)
+		log.Printf("Adding camera from row %d: IP=%s, Port=%d, Username=%s",
+			rowNum, cameraData.IP, cameraData.Port, cameraData.Username)
 
-		newID, err := camera.AddNewCamera(cameraData.IP, cameraData.Port, cameraData.URL, cameraData.Username, cameraData.Password, cameraData.IsFake)
+		newID, err := camera.AddNewCamera(cameraData.IP, cameraData.Port, cameraData.URL, cameraData.Username, cameraData.Password)
 		if err != nil {
 			log.Printf("Row %d: Failed to add camera: %v", rowNum, err)
 			results = append(results, map[string]interface{}{
@@ -1587,7 +1473,6 @@ func HandleImportCamerasCSV(w http.ResponseWriter, r *http.Request) {
 					URL:      cameraData.URL,
 					Username: cameraData.Username,
 					Password: cameraData.Password,
-					IsFake:   cameraData.IsFake,
 				},
 			})
 			successCount++
@@ -2039,45 +1924,14 @@ func HandleConfigSingleCam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Initialize camera client
-	var client *camera.CameraClient
-	if targetCamera.IsFake {
-		// For fake cameras, create a fake client
-		client = camera.NewFakeCameraClient(*targetCamera)
-	} else {
-		// For real cameras, try to connect via ONVIF
-		client, err = camera.NewCameraClient(*targetCamera)
-		if err != nil {
-			log.Printf("Failed to initialize camera %s: %v", targetCamera.ID, err)
-			http.Error(w, fmt.Sprintf("Failed to initialize camera: %v", err), http.StatusInternalServerError)
-			return
-		}
-	}
-
-	// Check if camera is fake and handle it differently
-	if client.Camera.IsFake {
-		log.Printf("Camera %s is a simulated device, providing simulated configuration result", targetCamera.ID)
-
-		response := map[string]interface{}{
-			"cameraId": targetCamera.ID,
-			"status":   "success",
-			"message":  "Configuration applied successfully (simulated)",
-			"appliedConfig": map[string]interface{}{
-				"resolution": map[string]int{
-					"width":  input.Width,
-					"height": input.Height,
-				},
-				"fps":      input.FPS,
-				"bitrate":  input.Bitrate,
-				"encoding": input.Encoding,
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
+	client, err := camera.NewCameraClient(*targetCamera)
+	if err != nil {
+		log.Printf("Failed to initialize camera %s: %v", targetCamera.ID, err)
+		http.Error(w, fmt.Sprintf("Failed to initialize camera: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// For real cameras, proceed with actual configuration
+	// Proceed with actual configuration
 	log.Printf("Getting profiles and configs for camera %s", targetCamera.ID)
 	profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
 	if err != nil {
@@ -2202,36 +2056,6 @@ func HandleValidateCam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Found camera %s (IP: %s:%d)", targetCamera.ID, targetCamera.IP, targetCamera.Port)
-
-	// Check if camera is fake
-	if targetCamera.IsFake {
-		log.Printf("Camera %s is simulated, returning simulated validation result", cameraID)
-
-		// For fake cameras, return a simulated validation result
-		response := map[string]interface {
-		}{
-			"cameraId": targetCamera.ID,
-			"isValid":  true,
-			"message":  "Simulated camera - validation bypassed",
-			"validationResult": map[string]interface{}{
-				"isValid":          true,
-				"expectedWidth":    1920,
-				"expectedHeight":   1080,
-				"expectedFPS":      25,
-				"expectedBitrate":  4000,
-				"expectedEncoding": "h264",
-				"actualWidth":      1920,
-				"actualHeight":     1080,
-				"actualFPS":        25.0,
-				"actualBitrate":    4000,
-				"actualEncoding":   "h264",
-			},
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(response)
-		return
-	}
 
 	// Create a camera client for this specific camera
 	client, err := camera.NewCameraClient(*targetCamera)

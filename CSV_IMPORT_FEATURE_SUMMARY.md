@@ -11,15 +11,14 @@
 
 #### 1. **Flexible CSV Format**
 - **Required Columns**: `ip`, `username`
-- **Optional Columns**: `port`, `url`, `password`, `isfake`
+- **Optional Columns**: `port`, `url`, `password`
 - **Case Insensitive**: Column headers are case-insensitive
 - **Any Order**: Columns can be in any order
 
 #### 2. **Smart Defaults**
 - Port: 80 (standard ONVIF port)
 - URL: Empty string
-- Password: Empty string  
-- IsFake: false (real camera)
+- Password: Empty string
 
 #### 3. **Robust Error Handling**
 - **Row-level validation**: Each row processed independently
@@ -40,11 +39,11 @@
 
 ### Sample CSV Format
 ```csv
-ip,port,url,username,password,isfake
-192.168.1.10,80,,admin,admin123,false
-192.168.1.11,8080,/onvif/device,user,password,false
-192.168.1.12,80,,administrator,pass123,false
-192.168.1.100,80,,fake_user,fake_pass,true
+ip,port,url,username,password
+192.168.1.10,80,,admin,admin123
+192.168.1.11,8080,/onvif/device,user,password
+192.168.1.12,80,,administrator,pass123
+192.168.1.100,80,,user,userpass
 ```
 
 ### HTTP Status Codes
@@ -56,7 +55,6 @@ ip,port,url,username,password,isfake
 1. **IP Address**: Must be non-empty
 2. **Username**: Must be non-empty
 3. **Port**: Must be valid integer (defaults to 80)
-4. **IsFake**: Accepts various formats (true/false, 1/0, yes/no)
 
 ### File Size Limit
 - **Current Limit**: 10MB

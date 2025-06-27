@@ -197,10 +197,6 @@ const CameraConfigPanel = ({
                     expectedBitrate: config.bitrate || 0
                   };
                   
-                  if (result.isFake) {
-                    validationData.isValid = true;
-                  }
-                  
                   validations.push(validationData);
                 }
               } else {
@@ -369,11 +365,6 @@ const CameraConfigPanel = ({
                 expectedFPS: fps,
                 expectedBitrate: bitrateValue
               };
-              
-              // For fake cameras, ensure we're marking if values match exactly
-              if (result.isFake) {
-                validationData.isValid = true;
-              }
               
               console.log(`Adding validation for camera ${cameraId}:`, validationData);
               validations.push(validationData);

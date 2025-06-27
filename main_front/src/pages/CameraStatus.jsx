@@ -55,6 +55,7 @@ const CameraStatus = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageJumpValue, setPageJumpValue] = useState('');
   const camerasPerPage = 50;
+  
   const [error, setError] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   
@@ -71,6 +72,38 @@ const CameraStatus = () => {
     bitrate: 2000,
     encoding: 'h264'
   });
+
+  // Optimized pagination helpers with memoization
+  const { totalPages, startIndex, endIndex, paginatedCameras } = useMemo(() => {
+    const total = Math.ceil(cameras.length / camerasPerPage);
+    const start = (currentPage - 1) * camerasPerPage;
+    const end = start + camerasPerPage;
+    const paginated = cameras.slice(start, end);
+    
+    return {
+      totalPages: total,
+      startIndex: start,
+      endIndex: end,
+      paginatedCameras: paginated
+    };
+  }, [cameras, currentPage, camerasPerPage]);
+
+  const handlePageChange = useCallback((event, value) => {
+    setCurrentPage(value);
+    setPageJumpValue(''); // Clear jump input when page changes
+  }, []);
+
+  const handlePageJump = useCallback((event) => {
+    if (event.key === 'Enter') {
+      const pageNum = parseInt(pageJumpValue);
+      if (pageNum >= 1 && pageNum <= totalPages) {
+        setCurrentPage(pageNum);
+        setPageJumpValue('');
+      } else {
+        showSnackbar(`Please enter a page number between 1 and ${totalPages}`, 'warning');
+      }
+    }
+  }, [pageJumpValue, totalPages]);
 
   // Load cameras from CSV
   const loadCameras = async () => {
@@ -322,36 +355,6 @@ const CameraStatus = () => {
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
-
-  // Optimized pagination helpers with memoization
-  const { totalPages, startIndex, endIndex, paginatedCameras } = useMemo(() => {
-    const total = Math.ceil(cameras.length / camerasPerPage);
-    const start = (currentPage - 1) * camerasPerPage;
-    const end = start + camerasPerPage;
-    const paginated = cameras.slice(start, end);
-    
-    return {
-      totalPages: total,
-      startIndex: start,
-      endIndex: end,
-      paginatedCameras: paginated
-    };
-  }, [cameras, currentPage, camerasPerPage]);
-
-  const handlePageChange = useCallback((event, value) => {
-    setCurrentPage(value);
-    setPageJumpValue(''); // Clear jump input when page changes
-  }, []);
-
-  const handlePageJump = useCallback((event) => {
-    if (event.key === 'Enter') {
-      const pageNum = parseInt(pageJumpValue);
-      if (pageNum >= 1 && pageNum <= totalPages) {
-        setCurrentPage(pageNum);
-        setPageJumpValue('');
-      }
-    }
-  }, [pageJumpValue, totalPages]);
 
   const handlePageJumpChange = useCallback((event) => {
     const value = event.target.value;
@@ -675,7 +678,6 @@ const CameraStatus = () => {
                   <TableCell>FPS</TableCell>
                   <TableCell>Bitrate</TableCell>
                   <TableCell>Validation</TableCell>
-                  <TableCell>Type</TableCell>
                   <TableCell align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -734,14 +736,6 @@ const CameraStatus = () => {
                       </TableCell>
                       <TableCell>
                         {getValidationChip(camera.cameraId)}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          label={camera.isFake ? 'Simulated' : 'Real'}
-                          color={camera.isFake ? 'warning' : 'primary'}
-                          variant="outlined"
-                        />
                       </TableCell>
                       <TableCell align="center">
                         <Box display="flex" gap={1}>

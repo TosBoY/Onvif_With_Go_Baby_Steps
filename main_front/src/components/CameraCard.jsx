@@ -26,7 +26,6 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false, onCameraDel
   const [infoDialogOpen, setInfoDialogOpen] = useState(false);
   
   const getStatusColor = () => {
-    if (camera.isFake) return 'warning';
     return 'success';
   };
   
@@ -80,27 +79,25 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false, onCameraDel
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, gap: 0.75 }}>              
               <Chip 
-                label={camera.isFake ? 'Simulation' : 'Connected'} 
+                label="Connected" 
                 color={getStatusColor()} 
                 size="small"
                 sx={{ 
                   height: '20px', 
                   '& .MuiChip-label': { px: 0.75, fontSize: '0.7rem', py: 0 },
-                  mr: camera.isFake ? 0 : 0.5
+                  mr: 0.5
                 }}
               />
-              {!camera.isFake && (
-                <Tooltip title="Launch VLC with stream">
-                  <IconButton                    
-                    color="primary" 
-                    size="small"
-                    onClick={handleLaunchVLC}
-                    sx={{ padding: '4px', minWidth: '24px', minHeight: '24px' }}
-                  >
-                    <PlayArrowIcon sx={{ fontSize: '1rem' }} />
-                  </IconButton>
-                </Tooltip>
-              )}              <Tooltip title="Camera Info">
+              <Tooltip title="Launch VLC with stream">
+                <IconButton                    
+                  color="primary" 
+                  size="small"
+                  onClick={handleLaunchVLC}
+                  sx={{ padding: '4px', minWidth: '24px', minHeight: '24px' }}
+                >
+                  <PlayArrowIcon sx={{ fontSize: '1rem' }} />
+                </IconButton>
+              </Tooltip>              <Tooltip title="Camera Info">
                 <IconButton                    
                   color="primary" 
                   size="small"
@@ -160,21 +157,19 @@ const CameraCard = ({ camera, isSelected, onSelect, compact = false, onCameraDel
           Camera {camera.id}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Chip 
-              label={camera.isFake ? 'Simulation' : 'Connected'} 
+              label="Connected" 
               color={getStatusColor()} 
               size="small" 
             />
-            {!camera.isFake && (
-              <Tooltip title="Launch VLC with stream">
-                <IconButton 
-                  color="primary"
-                  size="small"
-                  onClick={handleLaunchVLC}
-                >
-                  <PlayArrowIcon />
-                </IconButton>
-              </Tooltip>
-            )}            <Tooltip title="Camera Info">
+            <Tooltip title="Launch VLC with stream">
+              <IconButton 
+                color="primary"
+                size="small"
+                onClick={handleLaunchVLC}
+              >
+                <PlayArrowIcon />
+              </IconButton>
+            </Tooltip>            <Tooltip title="Camera Info">
               <IconButton 
                 color="primary"
                 size="small"

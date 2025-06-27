@@ -71,9 +71,6 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
   
   // Function to check if resolution matches
   const resolutionMatches = (v) => {
-    // If this is a fake camera, consider it matching if isValid is true
-    if (v.isFake && v.isValid) return true;
-    
     return v.actualWidth && v.actualHeight && 
            v.actualWidth === v.expectedWidth && 
            v.actualHeight === v.expectedHeight;
@@ -81,17 +78,11 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
   
   // Function to check if FPS matches
   const fpsMatches = (v) => {
-    // If this is a fake camera, consider it matching if isValid is true
-    if (v.isFake && v.isValid) return true;
-    
     return v.actualFPS && Math.abs(v.actualFPS - v.expectedFPS) < 1;
   };
 
   // Function to check if bitrate matches (if expected bitrate was provided)
   const bitrateMatches = (v) => {
-    // If this is a fake camera, consider it matching if isValid is true
-    if (v.isFake && v.isValid) return true;
-    
     // If no expected bitrate was provided, consider it matching
     if (!v.expectedBitrate || v.expectedBitrate === 0) return true;
     
@@ -107,9 +98,6 @@ const ValidationResults = ({ validation, appliedConfig, configurationErrors }) =
   
   // Function to check if encoding matches (if expected encoding was provided)
   const encodingMatches = (v) => {
-    // If this is a fake camera, consider it matching if isValid is true
-    if (v.isFake && v.isValid) return true;
-    
     // If no expected encoding was provided, consider it matching
     if (!v.expectedEncoding) return true;
     

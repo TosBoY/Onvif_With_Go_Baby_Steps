@@ -83,7 +83,6 @@ type CameraResult struct {
 	CameraID           string                 `json:"cameraId"`
 	Success            bool                   `json:"success"`
 	Error              error                  `json:"error,omitempty"`
-	IsFake             bool                   `json:"isFake"`
 	AppliedConfig      map[string]interface{} `json:"appliedConfig,omitempty"`
 	ResolutionAdjusted bool                   `json:"resolutionAdjusted"`
 	ProfileToken       string                 `json:"profileToken,omitempty"`

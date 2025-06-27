@@ -172,11 +172,6 @@ func parseRTSPURL(camID, rtspURL string) (models.Camera, error) {
 		password, _ = parsedURL.User.Password()
 	}
 
-	// Determine if camera is fake based on common patterns or default to false
-	isFake := false
-	// You can add logic here to determine if a camera is fake based on IP patterns
-	// For example: if strings.HasPrefix(host, "192.168.1.15") { isFake = true }
-
 	camera := models.Camera{
 		ID:       camID,
 		IP:       host,
@@ -184,7 +179,6 @@ func parseRTSPURL(camID, rtspURL string) (models.Camera, error) {
 		URL:      "",
 		Username: username,
 		Password: password,
-		IsFake:   isFake,
 	}
 
 	return camera, nil

@@ -95,16 +95,15 @@ export const launchVLC = async (cameraId) => {
   }
 };
 
-export const addNewCamera = async (ip, port, url, username, password, isFake = false) => {
+export const addNewCamera = async (ip, port, url, username, password) => {
   try {
-    console.log('Adding new camera:', { ip, port, url, username, isFake });
+    console.log('Adding new camera:', { ip, port, url, username });
     const response = await api.post('/cameras', {
       ip,
       port,
       url,
       username,
-      password,
-      isFake
+      password
     });
     return response.data;
   } catch (error) {

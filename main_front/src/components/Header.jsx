@@ -12,9 +12,6 @@ const Header = () => {
     switch (pathname) {
       case '/': return 0;
       case '/status': return 1;
-      case '/simple': return 2;
-      case '/debug': return 3;
-      case '/test': return 4;
       default: return 0;
     }
   };
@@ -28,7 +25,7 @@ const Header = () => {
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
-    const paths = ['/', '/status', '/simple', '/debug', '/test'];
+    const paths = ['/', '/status'];
     navigate(paths[newValue]);
   };
 
@@ -48,9 +45,6 @@ const Header = () => {
           >
             <Tab label="Dashboard" />
             <Tab label="Camera Status" />
-            <Tab label="Simple" />
-            <Tab label="Debug" />
-            <Tab label="Test" />
           </Tabs>
         </Box>
       </Toolbar>

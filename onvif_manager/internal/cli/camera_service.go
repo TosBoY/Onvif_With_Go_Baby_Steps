@@ -145,23 +145,8 @@ func (cs *CameraService) ApplyConfigToCameras(cameraIDs []string, config *Config
 
 	// Phase 2: Validate configurations
 	for _, cameraID := range cameraIDs {
-		if result, exists := results.CameraResults[cameraID]; exists && result.Success && !result.IsFake {
+		if result, exists := results.CameraResults[cameraID]; exists && result.Success {
 			validation := cs.validateCameraStream(result.StreamURL, config)
-			results.ValidationResults[cameraID] = validation
-		} else if result.IsFake {
-			// Add simulated validation for fake cameras
-			validation := &ValidationResult{
-				IsValid:         true,
-				ExpectedWidth:   config.Width,
-				ExpectedHeight:  config.Height,
-				ExpectedFPS:     config.FPS,
-				ExpectedBitrate: config.Bitrate,
-				ActualWidth:     config.Width,
-				ActualHeight:    config.Height,
-				ActualFPS:       float64(config.FPS),
-				ActualBitrate:   config.Bitrate,
-				Message:         "Simulated camera configuration applied successfully",
-			}
 			results.ValidationResults[cameraID] = validation
 		}
 	}
@@ -346,11 +331,9 @@ func (cs *CameraService) processCameraRecords(records [][]string) (*ImportResult
 			URL      string
 			Username string
 			Password string
-			IsFake   bool
 		}{
-			Port:   80,    // Default ONVIF port
-			URL:    "",    // Default empty
-			IsFake: false, // Default to real camera
+			Port: 80, // Default ONVIF port
+			URL:  "", // Default empty
 		}
 
 		// Extract IP (required)
@@ -400,14 +383,8 @@ func (cs *CameraService) processCameraRecords(records [][]string) (*ImportResult
 			cameraData.Password = strings.TrimSpace(record[passwordIndex])
 		}
 
-		if fakeIndex, exists := columnIndices["isfake"]; exists && fakeIndex < len(record) {
-			if fakeStr := strings.ToLower(strings.TrimSpace(record[fakeIndex])); fakeStr != "" {
-				cameraData.IsFake = (fakeStr == "true" || fakeStr == "1" || fakeStr == "yes")
-			}
-		}
-
 		// Attempt to add the camera
-		newID, err := camera.AddNewCamera(cameraData.IP, cameraData.Port, cameraData.URL, cameraData.Username, cameraData.Password, cameraData.IsFake)
+		newID, err := camera.AddNewCamera(cameraData.IP, cameraData.Port, cameraData.URL, cameraData.Username, cameraData.Password)
 		if err != nil {
 			results = append(results, ImportRowResult{
 				Row:     rowNum,
@@ -424,7 +401,6 @@ func (cs *CameraService) processCameraRecords(records [][]string) (*ImportResult
 				URL:      cameraData.URL,
 				Username: cameraData.Username,
 				Password: cameraData.Password,
-				IsFake:   cameraData.IsFake,
 			}
 			results = append(results, ImportRowResult{
 				Row:      rowNum,
@@ -647,25 +623,7 @@ func (cs *CameraService) applyCameraConfig(cameraID string, config *ConfigData) 
 		return result
 	}
 
-	// Check if camera is fake and handle it differently
-	if client.Camera.IsFake {
-		log.Printf("Camera %s is a simulated device, skipping real configuration", cameraID)
-		// For fake cameras, we simulate successful config application
-		result.Success = true
-		result.IsFake = true
-		result.AppliedConfig = map[string]interface{}{
-			"resolution": map[string]int{
-				"width":  config.Width,
-				"height": config.Height,
-			},
-			"fps":      config.FPS,
-			"bitrate":  config.Bitrate,
-			"encoding": config.Encoding,
-		}
-		return result
-	}
-
-	// For real cameras, proceed with config application
+	// Proceed with config application
 	log.Printf("Getting profiles and configs for camera %s (IP: %s:%d)", cameraID, client.Camera.IP, client.Camera.Port)
 	profileTokens, configTokens, err := camera.GetProfilesAndConfigs(client)
 	if err != nil {

@@ -47,24 +47,8 @@ func NewCameraClient(cam models.Camera) (*CameraClient, error) {
 	}, nil
 }
 
-// NewFakeCameraClient creates a simulated camera client for fake cameras
-func NewFakeCameraClient(cam models.Camera) *CameraClient {
-	return &CameraClient{
-		Camera: cam,
-		// For fake cameras, we don't need actual connections to ONVIF services
-		Client: nil,
-		Media:  nil,
-	}
-}
-
 // GetStreamURI retrieves the RTSP stream URI for a given profile.
 func (c *CameraClient) GetStreamURI(profileToken string) (string, error) {
-	// Handle fake cameras with simulated data
-	if c.Camera.IsFake {
-		// For fake cameras, return a simulated RTSP URI
-		return fmt.Sprintf("rtsp://%s/fake_stream", c.Camera.IP), nil
-	}
-
 	request := &media.GetStreamUri{
 		StreamSetup: media.StreamSetup{
 			Stream: media.StreamType("RTP-Unicast"),

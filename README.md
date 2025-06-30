@@ -34,6 +34,12 @@ Before you can build and run ONVIF Manager, ensure you have the following prereq
    - macOS: `brew install ffmpeg`
    - Verify with: `ffmpeg -version`
 
+4. **VLC Media Player** (for camera stream viewing)
+   - Windows: https://www.videolan.org/vlc/download-windows.html
+   - Linux: `sudo apt install vlc`
+   - macOS: `brew install --cask vlc` or download from https://www.videolan.org/vlc/download-macosx.html
+   - Verify with: `vlc --version`
+
 Note: The web frontend is already built and included in the repository, so Node.js and npm are not required unless you want to modify the frontend.
 
 ## Building the Application

@@ -645,20 +645,17 @@ const CameraStatus = () => {
             Load cameras from CSV file and check their status individually
           </Typography>
           
-          {/* Camera Count and Pagination Info */}
+          {/* Camera Count Info */}
           <Box sx={{ mt: 2 }}>
             <Typography variant="body2" color="text.secondary">
               {cameras.length} cameras loaded from CSV
-              {cameras.length > camerasPerPage && (
-                <span> | Page {currentPage} of {totalPages} | Showing {startIndex + 1}-{Math.min(endIndex, cameras.length)} of {cameras.length}</span>
-              )}
             </Typography>
           </Box>
-
-          {/* Top Pagination */}
-          {PaginationComponent}
         </CardContent>
       </Card>
+
+      {/* Pagination outside of the camera status monitor box */}
+      {PaginationComponent}
 
       {cameras.length === 0 ? (
         <Alert severity="info">

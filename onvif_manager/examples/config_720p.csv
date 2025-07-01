@@ -1,2 +1,2 @@
-width,height,fps,bitrate
-1280,720,25,2048
+width,height,fps,bitrate,encoding
+1280,720,30,2048,H264

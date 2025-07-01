@@ -146,12 +146,16 @@ var configShowCmd = &cobra.Command{
 
 // configSetCmd sets the saved configuration manually
 var configSetCmd = &cobra.Command{
-	Use:   "set [width] [height] [fps] [bitrate]",
+	Use:   "set [width] [height] [fps] [bitrate] [encoding]",
 	Short: "Set saved configuration manually",
-	Long:  `Set the saved configuration values manually by providing width, height, fps, and bitrate.`,
-	Args:  cobra.ExactArgs(4),
+	Long:  `Set the saved configuration values manually by providing width, height, fps, bitrate, and optionally encoding (H264, H265, HEVC, MJPEG).`,
+	Args:  cobra.RangeArgs(4, 5),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runSetConfig(args[0], args[1], args[2], args[3])
+		encoding := "H264" // Default encoding
+		if len(args) == 5 {
+			encoding = args[4]
+		}
+		return runSetConfigWithEncoding(args[0], args[1], args[2], args[3], encoding)
 	},
 }
 
@@ -183,8 +187,8 @@ func init() {
 
 	// These commands are no longer exposed in the simplified workflow
 	// but kept in the code for compatibility with existing scripts
-	// configCmd.AddCommand(configShowCmd)
-	// configCmd.AddCommand(configSetCmd)
+	configCmd.AddCommand(configShowCmd)
+	configCmd.AddCommand(configSetCmd)
 	// configCmd.AddCommand(configImportCmd)
 	// configCmd.AddCommand(applyToSelectedCmd)
 }

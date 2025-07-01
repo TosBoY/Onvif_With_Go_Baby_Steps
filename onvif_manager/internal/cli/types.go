@@ -91,17 +91,19 @@ type CameraResult struct {
 
 // ValidationResult represents the result of validating a camera stream
 type ValidationResult struct {
-	IsValid         bool    `json:"isValid"`
-	ExpectedWidth   int     `json:"expectedWidth"`
-	ExpectedHeight  int     `json:"expectedHeight"`
-	ExpectedFPS     int     `json:"expectedFPS"`
-	ExpectedBitrate int     `json:"expectedBitrate"`
-	ActualWidth     int     `json:"actualWidth"`
-	ActualHeight    int     `json:"actualHeight"`
-	ActualFPS       float64 `json:"actualFPS"`
-	ActualBitrate   int     `json:"actualBitrate"`
-	Error           string  `json:"error,omitempty"`
-	Message         string  `json:"message,omitempty"`
+	IsValid          bool    `json:"isValid"`
+	ExpectedWidth    int     `json:"expectedWidth"`
+	ExpectedHeight   int     `json:"expectedHeight"`
+	ExpectedFPS      int     `json:"expectedFPS"`
+	ExpectedBitrate  int     `json:"expectedBitrate"`
+	ExpectedEncoding string  `json:"expectedEncoding"`
+	ActualWidth      int     `json:"actualWidth"`
+	ActualHeight     int     `json:"actualHeight"`
+	ActualFPS        float64 `json:"actualFPS"`
+	ActualBitrate    int     `json:"actualBitrate"`
+	ActualEncoding   string  `json:"actualEncoding"`
+	Error            string  `json:"error,omitempty"`
+	Message          string  `json:"message,omitempty"`
 }
 
 // Summary represents a summary of operations

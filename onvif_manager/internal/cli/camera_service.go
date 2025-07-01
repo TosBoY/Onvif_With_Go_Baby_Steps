@@ -189,7 +189,7 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 	defer writer.Flush()
 
 	// Write header with notes column
-	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "notes"}
+	header := []string{"cam_id", "cam_ip", "result", "reso_expected", "reso_actual", "fps_expected", "fps_actual", "encoding_expected", "encoding_actual", "notes"}
 	if err := writer.Write(header); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
@@ -247,7 +247,7 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 			}
 
 			// Write row for configuration error
-			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
+			row := []string{cameraID, cameraIP, "CONFIG_ERROR", "", "", "", "", "", "", fmt.Sprintf("Configuration Error: %s", errorMsg)}
 			if err := writer.Write(row); err != nil {
 				return fmt.Errorf("failed to write CSV row: %w", err)
 			}
@@ -269,8 +269,63 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 		notes := ""
 
 		if validationResult.IsValid {
-			result = "PASS"
-			notes = "All parameters match expected values"
+			// Check each parameter individually like the web version
+
+			// Check resolution match
+			resolutionMatches := true
+			if validationResult.ActualWidth > 0 && validationResult.ActualHeight > 0 {
+				resolutionMatches = (validationResult.ActualWidth == validationResult.ExpectedWidth &&
+					validationResult.ActualHeight == validationResult.ExpectedHeight)
+			} else {
+				resolutionMatches = false
+			}
+
+			// Check FPS match
+			fpsMatches := true
+			if validationResult.ActualFPS > 0 {
+				fpsMatches = (int(validationResult.ActualFPS+0.5) == validationResult.ExpectedFPS)
+			}
+
+			// Check bitrate match (with 10% tolerance like web version)
+			bitrateMatches := true
+			if validationResult.ExpectedBitrate > 0 && validationResult.ActualBitrate > 0 {
+				tolerance := float64(validationResult.ExpectedBitrate) * 0.1
+				diff := float64(validationResult.ActualBitrate - validationResult.ExpectedBitrate)
+				if diff < 0 {
+					diff = -diff
+				}
+				bitrateMatches = (diff <= tolerance)
+			}
+
+			// Check encoding match
+			encodingMatches := true
+			if validationResult.ExpectedEncoding != "" && validationResult.ActualEncoding != "" {
+				encodingMatches = strings.EqualFold(validationResult.ActualEncoding, validationResult.ExpectedEncoding)
+			}
+
+			// Determine final result and notes based on matches
+			if resolutionMatches && fpsMatches && bitrateMatches && encodingMatches {
+				result = "PASS"
+				notes = "All parameters match expected values"
+			} else if resolutionMatches {
+				// Resolution matches but other parameters don't = WARNING
+				result = "WARNING"
+				var notesParts []string
+				if !fpsMatches {
+					notesParts = append(notesParts, "FPS mismatch")
+				}
+				if !bitrateMatches {
+					notesParts = append(notesParts, "Bitrate mismatch")
+				}
+				if !encodingMatches {
+					notesParts = append(notesParts, "Encoding mismatch")
+				}
+				notes = strings.Join(notesParts, "; ")
+			} else {
+				// Resolution doesn't match = FAIL
+				result = "FAIL"
+				notes = "Resolution mismatch"
+			}
 		} else if validationResult.Error != "" {
 			notes = validationResult.Error
 		} else {
@@ -289,7 +344,10 @@ func (cs *CameraService) ExportValidationToCSV(validation *ValidationResults, ou
 			fpsActual = fmt.Sprintf("%.2f", validationResult.ActualFPS)
 		}
 
-		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, notes}
+		encodingExpected := validationResult.ExpectedEncoding
+		encodingActual := validationResult.ActualEncoding
+
+		row := []string{cameraID, cameraIP, result, resoExpected, resoActual, fpsExpected, fpsActual, encodingExpected, encodingActual, notes}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)
 		}
@@ -792,12 +850,13 @@ func (cs *CameraService) validateCameraStream(streamURL string, config *ConfigDa
 	validationResult, err := ffmpeg.ValidateStream(streamURL, config.Width, config.Height, config.FPS, config.Bitrate, config.Encoding)
 	if err != nil {
 		return &ValidationResult{
-			IsValid:         false,
-			Error:           err.Error(),
-			ExpectedWidth:   config.Width,
-			ExpectedHeight:  config.Height,
-			ExpectedFPS:     config.FPS,
-			ExpectedBitrate: config.Bitrate,
+			IsValid:          false,
+			Error:            err.Error(),
+			ExpectedWidth:    config.Width,
+			ExpectedHeight:   config.Height,
+			ExpectedFPS:      config.FPS,
+			ExpectedBitrate:  config.Bitrate,
+			ExpectedEncoding: config.Encoding,
 		}
 	}
 
@@ -811,15 +870,17 @@ func (cs *CameraService) validateCameraStream(streamURL string, config *ConfigDa
 	overrideIsValid := resolutionMatches // Only consider valid if resolution matches
 
 	return &ValidationResult{
-		IsValid:         overrideIsValid, // Use our override logic
-		ExpectedWidth:   validationResult.ExpectedWidth,
-		ExpectedHeight:  validationResult.ExpectedHeight,
-		ExpectedFPS:     validationResult.ExpectedFPS,
-		ExpectedBitrate: validationResult.ExpectedBitrate,
-		ActualWidth:     validationResult.ActualWidth,
-		ActualHeight:    validationResult.ActualHeight,
-		ActualFPS:       validationResult.ActualFPS,
-		ActualBitrate:   validationResult.ActualBitrate,
-		Error:           validationResult.Error,
+		IsValid:          overrideIsValid, // Use our override logic
+		ExpectedWidth:    validationResult.ExpectedWidth,
+		ExpectedHeight:   validationResult.ExpectedHeight,
+		ExpectedFPS:      validationResult.ExpectedFPS,
+		ExpectedBitrate:  validationResult.ExpectedBitrate,
+		ExpectedEncoding: validationResult.ExpectedEncoding,
+		ActualWidth:      validationResult.ActualWidth,
+		ActualHeight:     validationResult.ActualHeight,
+		ActualFPS:        validationResult.ActualFPS,
+		ActualBitrate:    validationResult.ActualBitrate,
+		ActualEncoding:   validationResult.ActualEncoding,
+		Error:            validationResult.Error,
 	}
 }
